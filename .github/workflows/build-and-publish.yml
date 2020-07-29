@@ -18,7 +18,7 @@ jobs:
         id: docker
         with:
           IMAGE_NAME: 'chunk-search-rs'
-          DOCKERFILE_PATH: './Dockerfile'
+          DOCKERFILE_PATH: './docker/single-target/Dockerfile'
           BUILD_CONTEXT: './'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
