@@ -50,7 +50,7 @@ jobs:
             fi
           done
 
-          zip -r target/releases.zip target/release
+          zip -r target/releases.zip target/releases
 
       - name: Create Release
         id: create_release
