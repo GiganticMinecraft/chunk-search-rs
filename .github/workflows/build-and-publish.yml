@@ -55,8 +55,9 @@ jobs:
         uses: anothrNick/github-tag-action@1.17.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEFAULT_BUMP: "minor"
+          DEFAULT_BUMP: "patch"
           WITH_V: true
+        id: bump_version
 
       - name: Release
         uses: softprops/action-gh-release@v1
@@ -64,6 +65,7 @@ jobs:
           files: ./target/releases/*
           draft: false
           prerelease: false
+          tag_name: ${{ steps.bump_version.outputs.new_tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
