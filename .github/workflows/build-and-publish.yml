@@ -15,7 +15,6 @@ jobs:
         
       - name: install build dependencies
         run: |
-          apt update & apt install zip
           curl https://sh.rustup.rs -sSf | sh -s -- -y
           source $HOME/.cargo/env
 
