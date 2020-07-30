@@ -38,8 +38,10 @@ jobs:
           # https://stackoverflow.com/questions/216995/how-can-i-use-inverse-or-negative-wildcards-when-pattern-matching-in-a-unix-linu
           shopt -s extglob
 
-          for target_dir_name in ./target/* ; do
-            for artifact_name in ./target/${target_dir_name}/release/chunk-search-rs* ; do
+          for target_dir in ./target/* ; do
+            target_dir_name=$(basename $target_dir)
+            for artifact in ./target/${target_dir_name}/release/chunk-search-rs* ; do
+              artifact_name=$(basename $artifact)
               if [ ${artifact_name} != "chunk-search-rs.d" ]; then
                 cp ./target/${target_dir_name}/release/${artifact_name} ./target/releases/${target_dir_name}-${artifact_name}
               fi
