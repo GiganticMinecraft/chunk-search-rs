@@ -40,12 +40,14 @@ jobs:
 
           for target_dir in ./target/* ; do
             target_dir_name=$(basename $target_dir)
-            for artifact in ./target/${target_dir_name}/release/chunk-search-rs* ; do
-              artifact_name=$(basename $artifact)
-              if [ ${artifact_name} != "chunk-search-rs.d" ]; then
-                cp ./target/${target_dir_name}/release/${artifact_name} ./target/releases/${target_dir_name}-${artifact_name}
-              fi
-            done
+            if [ ${target_dir_name} != "releases" ]; then 
+              for artifact in ./target/${target_dir_name}/release/chunk-search-rs* ; do
+                artifact_name=$(basename $artifact)
+                if [ ${artifact_name} != "chunk-search-rs.d" ]; then
+                  cp ./target/${target_dir_name}/release/${artifact_name} ./target/releases/${target_dir_name}-${artifact_name}
+                fi
+              done
+            fi
           done
 
           zip -r target/releases.zip target/release
