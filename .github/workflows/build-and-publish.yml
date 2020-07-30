@@ -12,6 +12,64 @@ jobs:
         uses: actions/checkout@master
         with:
           submodules: recursive
+        
+      - name: install build dependencies
+        run: |
+          apt update & apt install zip
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+          source $HOME/.cargo/env
+
+      - name: build artifacts
+        run: |
+          cargo install cross
+          targets=(
+            "aarch64-unknown-linux-gnu"
+            "x86_64-pc-windows-msvc"
+          )
+
+          for target in "${targets[@]}" ; do
+            cross build --target ${target} --release
+          done
+
+      - name: copy the release folders
+        run: |
+          rm -rf ./target/debug ./target/release
+          mkdir ./target/releases
+
+          # https://stackoverflow.com/questions/216995/how-can-i-use-inverse-or-negative-wildcards-when-pattern-matching-in-a-unix-linu
+          shopt -s extglob
+
+          for target_dir_name in ./target/* ; do
+            for artifact_name in ./target/${target_dir_name}/release/chunk-search-rs* ; do
+              if [ ${artifact_name} != "chunk-search-rs.d" ]; then
+                cp ./target/${target_dir_name}/release/${artifact_name} ./target/releases/${target_dir_name}-${artifact_name}
+              fi
+            done
+          done
+
+          zip -r target/releases.zip target/release
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        id: upload-release-asset 
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./target/releases.zip
+          asset_name: releases.zip
+          asset_content_type: application/zip
 
       - name: Publish Docker Image to GPR
         uses: machine-learning-apps/gpr-docker-publish@master
@@ -22,11 +80,3 @@ jobs:
           BUILD_CONTEXT: './'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Show outputs of previous step
-        run: |
-          echo "The name:tag of the Docker Image is: $VAR1"
-          echo "The docker image is hosted at $VAR2"
-        env:
-          VAR1: ${{ steps.docker.outputs.IMAGE_SHA_NAME }}
-          VAR2: ${{ steps.docker.outputs.IMAGE_URL }}
