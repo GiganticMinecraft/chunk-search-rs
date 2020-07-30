@@ -59,21 +59,21 @@ jobs:
           WITH_V: true
 
       - name: Release
-          uses: softprops/action-gh-release@v1
-          if: startsWith(github.ref, 'refs/tags/')
-          with:
-            files: ./target/releases/*
-            draft: false
-            prerelease: false
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: ./target/releases/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-        - name: Publish Docker Image to GPR
-          uses: machine-learning-apps/gpr-docker-publish@master
-          id: docker
-          with:
-            IMAGE_NAME: 'chunk-search-rs'
-            DOCKERFILE_PATH: './docker/single-target/Dockerfile'
-            BUILD_CONTEXT: './'
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish Docker Image to GPR
+        uses: machine-learning-apps/gpr-docker-publish@master
+        id: docker
+        with:
+          IMAGE_NAME: 'chunk-search-rs'
+          DOCKERFILE_PATH: './docker/single-target/Dockerfile'
+          BUILD_CONTEXT: './'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
