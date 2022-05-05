@@ -6,7 +6,7 @@ description = "Command line tool to traverse MineCraft regions and list chunks c
 edition = "2018"
 
 [build-dependencies]
-protobuf-codegen-pure = "2.15.1"
+protobuf-codegen-pure = "2.27.1"
 
 [dependencies]
 protobuf = "2.15.1"
