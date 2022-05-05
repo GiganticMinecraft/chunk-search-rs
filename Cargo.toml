@@ -18,4 +18,4 @@ clap = "2.34.0"
 # concurrent processing
 
 crossbeam = "0.7.3"
-crossbeam-channel = "0.4.2"
+crossbeam-channel = "0.5.4"
