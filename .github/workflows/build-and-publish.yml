@@ -1,8 +1,5 @@
 name: Build and publish docker image
-on:
-  push:
-    branches:
-      - master
+on: push
 
 jobs:
   build:
@@ -90,7 +87,7 @@ jobs:
         with:
           context: ./
           file: ./docker/single-target/Dockerfile
-          push: true
+          push: ${{ github.ref == 'refs/heads/master' }}
           tags: |
             ${{ steps.prepare_image_id.outputs.lowercase_id }}:latest
             ${{ steps.prepare_image_id.outputs.lowercase_id }}:${{ steps.prepare_image_id.outputs.short-ref }}
