@@ -9,7 +9,7 @@ edition = "2018"
 protobuf-codegen-pure = "2.27.1"
 
 [dependencies]
-protobuf = "2.15.1"
+protobuf = "2.27.1"
 anvil-region = { git = "https://github.com/GiganticMinecraft/anvil-region", rev = "e3d62f53"}
 named-binary-tag = "0.2"
 
