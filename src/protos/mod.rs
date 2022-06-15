@@ -1,2 +1,3 @@
-#![allow(warnings)]
+// @generated
+
 pub mod chunk_search;
