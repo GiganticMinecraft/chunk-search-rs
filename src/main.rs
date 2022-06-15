@@ -126,13 +126,13 @@ fn main() {
         .arg(
             Arg::with_name("protobuf")
                 .help("Enables protobuf-compiled output")
-                .short("p")
+                .short('p')
                 .long("protobuf"),
         )
         .arg(
             Arg::with_name("threads")
                 .help("Number of threads used to process region files")
-                .short("t")
+                .short('t')
                 .long("threads")
                 .takes_value(true),
         )
