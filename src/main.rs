@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate clap;
-
 use std::env;
 
 mod protos;
@@ -119,10 +116,10 @@ fn list_chunks_in_region_folder(
 }
 
 fn main() {
-    let app = App::new(crate_name!())
-        .version(crate_version!())
-        .author(crate_authors!())
-        .about(crate_description!())
+    let app = App::new(clap::crate_name!())
+        .version(clap::crate_version!())
+        .author(clap::crate_authors!())
+        .about(clap::crate_description!())
         .arg(
             Arg::with_name("protobuf")
                 .help("Enables protobuf-compiled output")
