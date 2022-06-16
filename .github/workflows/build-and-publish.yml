@@ -22,8 +22,6 @@ jobs:
         uses: arduino/setup-protoc@v1
         with:
           version: '3.x'
-      - name: test whether protoc exists
-        run: protoc --version
 
       - name: build artifacts
         run: |
