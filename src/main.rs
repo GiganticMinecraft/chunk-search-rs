@@ -72,7 +72,7 @@ fn get_anvil_region_instance(
 
 fn list_chunks_with_entities_in_region(region_file: &PathBuf) -> Vec<ChunkCoordinate> {
     let mut result = Vec::new();
-    let mut region = get_anvil_region_instance(&region_file).unwrap();
+    let mut region = get_anvil_region_instance(region_file).unwrap();
 
     for chunk in region.read_all_chunks().unwrap() {
         if let Some(c) = get_coordinate_if_contains_entities(&chunk).unwrap() {
