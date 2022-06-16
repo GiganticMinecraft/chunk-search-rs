@@ -13,7 +13,7 @@ use nbt::CompoundTag;
 use protobuf::{Message, RepeatedField};
 use std::fs::OpenOptions;
 use std::io::{stdout, Cursor, Read};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug)]
 struct ChunkCoordinate {
@@ -70,7 +70,7 @@ fn get_anvil_region_instance(
     Ok(region)
 }
 
-fn list_chunks_with_entities_in_region(region_file: &PathBuf) -> Vec<ChunkCoordinate> {
+fn list_chunks_with_entities_in_region(region_file: &Path) -> Vec<ChunkCoordinate> {
     let mut result = Vec::new();
     let mut region = get_anvil_region_instance(region_file).unwrap();
 
@@ -84,7 +84,7 @@ fn list_chunks_with_entities_in_region(region_file: &PathBuf) -> Vec<ChunkCoordi
 }
 
 fn list_chunks_in_region_folder(
-    region_folder_path: &PathBuf,
+    region_folder_path: &Path,
     worker_count: u16,
 ) -> Vec<ChunkCoordinate> {
     let (snd_region_file_path, rcv_region_file_path) = bounded(1);
