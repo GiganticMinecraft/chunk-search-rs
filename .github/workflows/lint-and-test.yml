@@ -14,6 +14,11 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
+      # buildをしないと、src/protos/*.rsがないので次のstepでつまずく
+      - name: Cargo build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
       - name: Cargo fmt
         uses: actions-rs/cargo@v1
         with:
