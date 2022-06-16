@@ -91,7 +91,6 @@ fn list_chunks_in_region_folder(
     let (snd_search_result, rcv_search_result) = bounded(1);
 
     crossbeam::scope(|s| {
-        let region_folder_path = region_folder_path.clone();
         s.spawn(move |_| {
             for region_file in region_folder_path.read_dir().unwrap() {
                 let region_file = region_file.unwrap().path();
