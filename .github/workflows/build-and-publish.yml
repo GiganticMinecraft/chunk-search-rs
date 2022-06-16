@@ -1,41 +1,35 @@
 name: Build and publish docker image
-on: push
-
+on:
+  push:
+    branches:
+      - master
 jobs:
-  build:
+  build-and-release:
+    name: Build binary and make a release on GitHub
     runs-on: ubuntu-latest
-    env:
-      image_name: chunk-search-rs
     steps:
-      - name: Checkout code
-        uses: actions/checkout@master
+      - uses: actions/checkout@master
         with:
           submodules: recursive
           fetch-depth: '0'
-
       - name: Setup Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           components: rustfmt, clippy
-
       - name: Build artifact
         uses: actions-rs/cargo@v1
         with:
           command: build
           args: --release
-
       - name: Bump version and push tag
-        if: ${{ github.ref == 'refs/heads/master' }}
         uses: anothrNick/github-tag-action@1.39.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEFAULT_BUMP: "patch"
           WITH_V: true
         id: bump_version
-
       - name: Release
-        if: ${{ github.ref == 'refs/heads/master' }}
         uses: softprops/action-gh-release@v1
         with:
           files: ./target/release/chunk-search-rs
@@ -44,28 +38,33 @@ jobs:
           tag_name: ${{ steps.bump_version.outputs.new_tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - id: prepare_image_id
-        name: Prepare image id's components
+  publish-docker-image:
+    runs-on: ubuntu-latest
+    env:
+      image_name: chunk-search-rs
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          fetch-depth: '0'
+      - name: Prepare image id's components
+        id: prepare_image_id
         run: |
-          lowercase_id=ghcr.io/${{ github.repository_owner }}/${{ env.image_name }}
-          echo "::set-output name=lowercase_id::$(echo $lowercase_id | tr '[A-Z]' '[a-z]')"
+          id=ghcr.io/${{ github.repository_owner }}/${{ env.image_name }}
+          echo "::set-output name=id::$(echo $id)"
           echo "::set-output name=short-ref::$(git rev-parse --short "$GITHUB_SHA")"
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build and push
-        if: ${{ github.ref == 'refs/heads/master' }}
         uses: docker/build-push-action@v3
         with:
           context: ./
           file: ./docker/single-target/Dockerfile
           push: true
           tags: |
-            ${{ steps.prepare_image_id.outputs.lowercase_id }}:latest
-            ${{ steps.prepare_image_id.outputs.lowercase_id }}:${{ steps.prepare_image_id.outputs.short-ref }}
+            ${{ steps.prepare_image_id.outputs.id }}:latest
+            ${{ steps.prepare_image_id.outputs.id }}:${{ steps.prepare_image_id.outputs.short-ref }}
