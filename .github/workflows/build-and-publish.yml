@@ -19,37 +19,11 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
 
-      - name: build artifacts
-        run: |
-          cargo install cross
-          targets=(
-            "aarch64-unknown-linux-gnu"
-            "x86_64-pc-windows-gnu"
-          )
-
-          for target in "${targets[@]}" ; do
-            cross build --target ${target} --release
-          done
-
-      - name: copy the binaries to releases folder
-        run: |
-          rm -rf ./target/debug ./target/release
-          mkdir ./target/releases
-
-          # https://stackoverflow.com/questions/216995/how-can-i-use-inverse-or-negative-wildcards-when-pattern-matching-in-a-unix-linu
-          shopt -s extglob
-
-          for target_dir in ./target/* ; do
-            target_dir_name=$(basename $target_dir)
-            if [ ${target_dir_name} != "releases" ]; then
-              for artifact in ./target/${target_dir_name}/release/chunk-search-rs* ; do
-                artifact_name=$(basename $artifact)
-                if [ ${artifact_name} != "chunk-search-rs.d" ]; then
-                  cp ./target/${target_dir_name}/release/${artifact_name} ./target/releases/${target_dir_name}-${artifact_name}
-                fi
-              done
-            fi
-          done
+      - name: Build artifact
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
 
       - name: Bump version and push tag
         if: ${{ github.ref == 'refs/heads/master' }}
@@ -64,7 +38,7 @@ jobs:
         if: ${{ github.ref == 'refs/heads/master' }}
         uses: softprops/action-gh-release@v1
         with:
-          files: ./target/releases/*
+          files: ./target/release/chunk-search-rs
           draft: false
           prerelease: false
           tag_name: ${{ steps.bump_version.outputs.new_tag }}
