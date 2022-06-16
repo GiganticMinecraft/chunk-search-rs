@@ -18,8 +18,10 @@ jobs:
           curl https://sh.rustup.rs -sSf | sh -s -- -y
           source $HOME/.cargo/env
 
-      - name: Install protobuf
-        run: sudo apt update && sudo apt install -y protobuf libssl-dev pkg-config
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          version: '3.x'
 
       - name: build artifacts
         run: |
