@@ -9,7 +9,7 @@ use protobuf::{Message, RepeatedField};
 use std::env;
 use std::fs::OpenOptions;
 use std::io::{stdout, Cursor, Read};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug)]
 struct ChunkCoordinate {
@@ -80,7 +80,7 @@ fn list_chunks_with_entities_in_region(region_file: &Path) -> Vec<ChunkCoordinat
 }
 
 fn list_chunks_in_region_folder(
-    region_folder_path: &PathBuf,
+    region_folder_path: &Path,
     worker_count: u16,
 ) -> Vec<ChunkCoordinate> {
     let (snd_region_file_path, rcv_region_file_path) = bounded(1);
