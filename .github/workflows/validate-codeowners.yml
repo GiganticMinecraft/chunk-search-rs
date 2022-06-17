@@ -1,10 +1,10 @@
 name: validate CODEOWNERS
 on:
   pull_request:
-    path:
+    paths:
       - CODEOWNERS
   push:
-    path:
+    paths:
       - CODEOWNERS
 
 
@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+    - uses: actions/checkout@v3
     - uses: mszostok/codeowners-validator@v0.7.4
       with:
         # OWNER check requires token (maybe `org:read`?)
