@@ -143,10 +143,11 @@ fn main() {
     let matches = app.get_matches();
 
     let use_protobuf = matches.is_present("protobuf");
-    let threads = match matches.value_of("threads") {
-        Some(t) => t.parse::<u16>().unwrap_or(1).max(1),
-        None => 1,
-    };
+    let threads = matches
+        .value_of("threads")
+        .and_then(|t| t.parse::<u16>().ok())
+        .unwrap_or(1)
+        .max(1);
 
     let world_folder_path_str = matches.value_of("world_folder").unwrap();
     let world_folder_path: &Path = Path::new(&world_folder_path_str);
