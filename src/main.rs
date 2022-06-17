@@ -141,17 +141,16 @@ fn main() {
         );
 
     let matches = app.get_matches();
-
     let use_protobuf = matches.is_present("protobuf");
     let threads = matches
         .value_of("threads")
         .and_then(|t| t.parse::<u16>().ok())
         .unwrap_or(1)
         .max(1);
-
-    let world_folder_path_str = matches.value_of("world_folder").unwrap();
-    let world_folder_path: &Path = Path::new(&world_folder_path_str);
-    let region_folder_path = world_folder_path.join("region");
+    let region_folder_path = matches
+        .value_of("world_folder")
+        .map(|s| Path::new(s).join("region"))
+        .unwrap();
 
     let result = list_chunks_in_region_folder(&region_folder_path, threads);
 
