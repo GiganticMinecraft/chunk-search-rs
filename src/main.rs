@@ -5,15 +5,15 @@ use std::env;
 
 mod protos;
 
+use crate::protos::chunk_search::{Chunk, ChunkCoord, SearchResult};
 use anvil_region::AnvilRegion;
-use nbt::CompoundTag;
-use std::path::{Path, PathBuf};
-use std::fs::OpenOptions;
-use std::io::{Cursor, Read, stdout};
-use crossbeam_channel::bounded;
 use clap::{App, Arg};
-use protobuf::{RepeatedField, Message};
-use crate::protos::chunk_search::{ChunkCoord, Chunk, SearchResult};
+use crossbeam_channel::bounded;
+use nbt::CompoundTag;
+use protobuf::{Message, RepeatedField};
+use std::fs::OpenOptions;
+use std::io::{stdout, Cursor, Read};
+use std::path::Path;
 
 #[derive(Debug)]
 struct ChunkCoordinate {
@@ -32,7 +32,9 @@ impl From<&ChunkCoordinate> for Chunk {
     }
 }
 
-fn get_coordinate_if_contains_entities(chunk_nbt: &CompoundTag) -> Result<Option<ChunkCoordinate>, nbt::CompoundTagError> {
+fn get_coordinate_if_contains_entities(
+    chunk_nbt: &CompoundTag,
+) -> Result<Option<ChunkCoordinate>, nbt::CompoundTagError> {
     let level = chunk_nbt.get_compound_tag("Level")?;
 
     let x = level.get_i32("xPos")?;
@@ -41,17 +43,18 @@ fn get_coordinate_if_contains_entities(chunk_nbt: &CompoundTag) -> Result<Option
     let chunk_contains_entity = !level.get_compound_tag_vec("Entities")?.is_empty();
     let chunk_contains_tile_entity = !level.get_compound_tag_vec("TileEntities")?.is_empty();
 
-    let result =
-        if chunk_contains_entity || chunk_contains_tile_entity {
-            Some(ChunkCoordinate { x, z })
-        } else {
-            None
-        };
+    let result = if chunk_contains_entity || chunk_contains_tile_entity {
+        Some(ChunkCoordinate { x, z })
+    } else {
+        None
+    };
 
     Ok(result)
 }
 
-fn get_anvil_region_instance(region_file_path: &Path) -> std::io::Result<AnvilRegion<Cursor<Vec<u8>>>> {
+fn get_anvil_region_instance(
+    region_file_path: &Path,
+) -> std::io::Result<AnvilRegion<Cursor<Vec<u8>>>> {
     let file_contents = {
         let mut region_file = OpenOptions::new()
             .read(true)
@@ -67,9 +70,9 @@ fn get_anvil_region_instance(region_file_path: &Path) -> std::io::Result<AnvilRe
     Ok(region)
 }
 
-fn list_chunks_with_entities_in_region(region_file: &PathBuf) -> Vec<ChunkCoordinate> {
+fn list_chunks_with_entities_in_region(region_file: &Path) -> Vec<ChunkCoordinate> {
     let mut result = Vec::new();
-    let mut region = get_anvil_region_instance(&region_file).unwrap();
+    let mut region = get_anvil_region_instance(region_file).unwrap();
 
     for chunk in region.read_all_chunks().unwrap() {
         if let Some(c) = get_coordinate_if_contains_entities(&chunk).unwrap() {
@@ -80,12 +83,14 @@ fn list_chunks_with_entities_in_region(region_file: &PathBuf) -> Vec<ChunkCoordi
     result
 }
 
-fn list_chunks_in_region_folder(region_folder_path: &PathBuf, worker_count: u16) -> Vec<ChunkCoordinate> {
+fn list_chunks_in_region_folder(
+    region_folder_path: &Path,
+    worker_count: u16,
+) -> Vec<ChunkCoordinate> {
     let (snd_region_file_path, rcv_region_file_path) = bounded(1);
     let (snd_search_result, rcv_search_result) = bounded(1);
 
     crossbeam::scope(|s| {
-        let region_folder_path = region_folder_path.clone();
         s.spawn(move |_| {
             for region_file in region_folder_path.read_dir().unwrap() {
                 let region_file = region_file.unwrap().path();
@@ -108,7 +113,8 @@ fn list_chunks_in_region_folder(region_folder_path: &PathBuf, worker_count: u16)
         drop(snd_search_result);
 
         rcv_search_result.iter().flatten().collect::<Vec<_>>()
-    }).unwrap()
+    })
+    .unwrap()
 }
 
 fn main() {
@@ -120,29 +126,28 @@ fn main() {
             Arg::with_name("protobuf")
                 .help("Enables protobuf-compiled output")
                 .short("p")
-                .long("protobuf")
+                .long("protobuf"),
         )
         .arg(
             Arg::with_name("threads")
                 .help("Number of threads used to process region files")
                 .short("t")
                 .long("threads")
-                .takes_value(true)
+                .takes_value(true),
         )
         .arg(
             Arg::with_name("world_folder")
                 .help("Location containing world data to be traversed e.g. /spigot/world")
-                .required(true)
+                .required(true),
         );
 
     let matches = app.get_matches();
 
     let use_protobuf = matches.is_present("protobuf");
-    let threads =
-        match matches.value_of("threads") {
-            Some(t) => { t.parse::<u16>().unwrap_or(1).max(1) }
-            None => { 1 }
-        };
+    let threads = match matches.value_of("threads") {
+        Some(t) => t.parse::<u16>().unwrap_or(1).max(1),
+        None => 1,
+    };
 
     let world_folder_path_str = matches.value_of("world_folder").unwrap();
     let world_folder_path: &Path = Path::new(&world_folder_path_str);
@@ -153,9 +158,7 @@ fn main() {
     if use_protobuf {
         let mut search_result: SearchResult = protos::chunk_search::SearchResult::new();
         {
-            let converted_result = result.iter()
-                .map(Chunk::from)
-                .collect::<Vec<_>>();
+            let converted_result = result.iter().map(Chunk::from).collect::<Vec<_>>();
             search_result.set_result(RepeatedField::from(converted_result))
         }
         search_result.write_to_writer(&mut stdout()).unwrap();

@@ -1,96 +1,70 @@
 name: Build and publish docker image
-on: push
-
+on:
+  push:
+    branches:
+      - master
 jobs:
-  build:
+  build-and-release:
+    name: Build binary and make a release on GitHub
     runs-on: ubuntu-latest
-    env:
-      image_name: chunk-search-rs
     steps:
-      - name: Checkout code
-        uses: actions/checkout@master
+      - uses: actions/checkout@master
         with:
           submodules: recursive
           fetch-depth: '0'
-        
-      - name: install build dependencies
-        run: |
-          curl https://sh.rustup.rs -sSf | sh -s -- -y
-          source $HOME/.cargo/env
-
-      - name: build artifacts
-        run: |
-          cargo install cross
-          targets=(
-            "aarch64-unknown-linux-gnu"
-            "x86_64-pc-windows-gnu"
-          )
-
-          for target in "${targets[@]}" ; do
-            cross build --target ${target} --release
-          done
-
-      - name: copy the binaries to releases folder
-        run: |
-          rm -rf ./target/debug ./target/release
-          mkdir ./target/releases
-
-          # https://stackoverflow.com/questions/216995/how-can-i-use-inverse-or-negative-wildcards-when-pattern-matching-in-a-unix-linu
-          shopt -s extglob
-
-          for target_dir in ./target/* ; do
-            target_dir_name=$(basename $target_dir)
-            if [ ${target_dir_name} != "releases" ]; then 
-              for artifact in ./target/${target_dir_name}/release/chunk-search-rs* ; do
-                artifact_name=$(basename $artifact)
-                if [ ${artifact_name} != "chunk-search-rs.d" ]; then
-                  cp ./target/${target_dir_name}/release/${artifact_name} ./target/releases/${target_dir_name}-${artifact_name}
-                fi
-              done
-            fi
-          done
-
+      - name: Setup Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Build artifact
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
       - name: Bump version and push tag
-        if: ${{ github.ref == 'refs/heads/master' }}
         uses: anothrNick/github-tag-action@1.39.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEFAULT_BUMP: "patch"
           WITH_V: true
         id: bump_version
-
       - name: Release
-        if: ${{ github.ref == 'refs/heads/master' }}
         uses: softprops/action-gh-release@v1
         with:
-          files: ./target/releases/*
+          files: ./target/release/chunk-search-rs
           draft: false
           prerelease: false
           tag_name: ${{ steps.bump_version.outputs.new_tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - id: prepare_image_id
-        name: Prepare image id's components
+  publish-docker-image:
+    runs-on: ubuntu-latest
+    env:
+      image_name: chunk-search-rs
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          fetch-depth: '0'
+      - name: Prepare image id's components
+        id: prepare_image_id
         run: |
-          lowercase_id=ghcr.io/${{ github.repository_owner }}/${{ env.image_name }}
-          echo "::set-output name=lowercase_id::$(echo $lowercase_id | tr '[A-Z]' '[a-z]')"
+          id=ghcr.io/${{ github.repository_owner }}/${{ env.image_name }}
+          echo "::set-output name=id::$(echo $id)"
           echo "::set-output name=short-ref::$(git rev-parse --short "$GITHUB_SHA")"
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build and push
-        if: ${{ github.ref == 'refs/heads/master' }}
         uses: docker/build-push-action@v3
         with:
           context: ./
           file: ./docker/single-target/Dockerfile
           push: true
           tags: |
-            ${{ steps.prepare_image_id.outputs.lowercase_id }}:latest
-            ${{ steps.prepare_image_id.outputs.lowercase_id }}:${{ steps.prepare_image_id.outputs.short-ref }}
+            ${{ steps.prepare_image_id.outputs.id }}:latest
+            ${{ steps.prepare_image_id.outputs.id }}:${{ steps.prepare_image_id.outputs.short-ref }}
