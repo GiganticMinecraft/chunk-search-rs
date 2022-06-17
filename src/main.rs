@@ -66,9 +66,9 @@ fn get_anvil_region_instance(
     Ok(region)
 }
 
-fn list_chunks_with_entities_in_region(region_file: &PathBuf) -> Vec<ChunkCoordinate> {
+fn list_chunks_with_entities_in_region(region_file: &Path) -> Vec<ChunkCoordinate> {
     let mut result = Vec::new();
-    let mut region = get_anvil_region_instance(&region_file).unwrap();
+    let mut region = get_anvil_region_instance(region_file).unwrap();
 
     for chunk in region.read_all_chunks().unwrap() {
         if let Some(c) = get_coordinate_if_contains_entities(&chunk).unwrap() {
@@ -87,7 +87,6 @@ fn list_chunks_in_region_folder(
     let (snd_search_result, rcv_search_result) = bounded(1);
 
     crossbeam::scope(|s| {
-        let region_folder_path = region_folder_path.clone();
         s.spawn(move |_| {
             for region_file in region_folder_path.read_dir().unwrap() {
                 let region_file = region_file.unwrap().path();

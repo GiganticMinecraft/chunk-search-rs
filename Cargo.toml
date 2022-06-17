@@ -18,4 +18,4 @@ clap = {version = "3.2.4", features = ["cargo"]}
 # concurrent processing
 
 crossbeam = "0.8.1"
-crossbeam-channel = "0.5.4"
+crossbeam-channel = "0.5.5"
