@@ -6,10 +6,10 @@ description = "Command line tool to traverse MineCraft regions and list chunks c
 edition = "2018"
 
 [build-dependencies]
-protobuf-codegen-pure = "2.27.1"
+protobuf-codegen = "3.0.3"
 
 [dependencies]
-protobuf = "2.27.1"
+protobuf = "3.0.3"
 anvil-region = { git = "https://github.com/GiganticMinecraft/anvil-region", rev = "e3d62f53"}
 named-binary-tag = "0.2"
 
