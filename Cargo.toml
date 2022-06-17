@@ -13,9 +13,9 @@ protobuf = "2.27.1"
 anvil-region = { git = "https://github.com/GiganticMinecraft/anvil-region", rev = "8dd1ca732686cac19f9957300414319108c07341"}
 named-binary-tag = "0.6"
 
-clap = "2.34.0"
+clap = {version = "3.2.4", features = ["cargo"]}
 
 # concurrent processing
 
 crossbeam = "0.8.1"
-crossbeam-channel = "0.5.4"
+crossbeam-channel = "0.5.5"
