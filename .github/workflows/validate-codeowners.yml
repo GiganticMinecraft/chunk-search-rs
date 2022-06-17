@@ -3,9 +3,11 @@ on:
   pull_request:
     paths:
       - CODEOWNERS
+      - .github/workflows/validate-codeowners.yml
   push:
     paths:
       - CODEOWNERS
+      - .github/workflows/validate-codeowners.yml
 
 
 jobs:
