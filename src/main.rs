@@ -1,18 +1,20 @@
 #[macro_use]
 extern crate clap;
 
-use std::env;
+use std::{env, fs::File};
 
 mod protos;
 
 use crate::protos::chunk_search::{Chunk, ChunkCoord, SearchResult};
-use anvil_region::region::Region;
+use anvil_region::{
+    provider::{FolderRegionProvider, RegionProvider},
+    region::Region,
+};
 use clap::{App, Arg};
 use crossbeam_channel::bounded;
 use nbt::CompoundTag;
 use protobuf::{Message, RepeatedField};
-use std::fs::OpenOptions;
-use std::io::{stdout, Cursor, Read};
+use std::io::stdout;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
@@ -52,25 +54,8 @@ fn get_coordinate_if_contains_entities(
     Ok(result)
 }
 
-fn get_anvil_region_instance(region_file_path: &Path) -> std::io::Result<Region<Cursor<Vec<u8>>>> {
-    let file_contents = {
-        let mut region_file = OpenOptions::new()
-            .read(true)
-            .write(false)
-            .create(false)
-            .open(region_file_path)?;
-        let mut contents = Vec::new();
-        region_file.read_to_end(&mut contents)?;
-        contents
-    };
-
-    let region = Region::load(Cursor::new(file_contents))?;
-    Ok(region)
-}
-
-fn list_chunks_with_entities_in_region(region_file: &PathBuf) -> Vec<ChunkCoordinate> {
+fn list_chunks_with_entities_in_region(region: &mut Region<File>) -> Vec<ChunkCoordinate> {
     let mut result = Vec::new();
-    let mut region = get_anvil_region_instance(&region_file).unwrap();
 
     for chunk in region.read_all_chunks().unwrap() {
         if let Some(c) = get_coordinate_if_contains_entities(&chunk).unwrap() {
@@ -85,27 +70,30 @@ fn list_chunks_in_region_folder(
     region_folder_path: &PathBuf,
     worker_count: u16,
 ) -> Vec<ChunkCoordinate> {
-    let (snd_region_file_path, rcv_region_file_path) = bounded(1);
+    let (snd_region, rcv_region) = bounded(1);
     let (snd_search_result, rcv_search_result) = bounded(1);
 
     crossbeam::scope(|s| {
-        let region_folder_path = region_folder_path.clone();
+        let region_provider = FolderRegionProvider::new(region_folder_path.to_str().unwrap());
         s.spawn(move |_| {
-            for region_file in region_folder_path.read_dir().unwrap() {
-                let region_file = region_file.unwrap().path();
-                let _ = snd_region_file_path.send(region_file);
-            }
+            region_provider
+                .iter_positions()
+                .unwrap()
+                .map(|position| region_provider.get_region(position).unwrap())
+                .for_each(|region| {
+                    let _ = snd_region.send(region);
+                });
 
-            drop(snd_region_file_path);
+            drop(snd_region);
         });
 
         for _ in 0..worker_count {
-            let (sndsr, rcvfp) = (snd_search_result.clone(), rcv_region_file_path.clone());
+            let (sndsr, rcvrg) = (snd_search_result.clone(), rcv_region.clone());
             s.spawn(move |_| {
-                for path in rcvfp.iter() {
-                    let result = list_chunks_with_entities_in_region(&path);
+                rcvrg.iter().for_each(|mut region| {
+                    let result = list_chunks_with_entities_in_region(&mut region);
                     let _ = sndsr.send(result);
-                }
+                })
             });
         }
 
