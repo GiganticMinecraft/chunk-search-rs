@@ -1,8 +1,3 @@
-#[macro_use]
-extern crate clap;
-
-use std::env;
-
 mod protos;
 
 use crate::protos::chunk_search::{Chunk, ChunkCoord, SearchResult};
@@ -11,9 +6,10 @@ use clap::{App, Arg};
 use crossbeam_channel::bounded;
 use nbt::CompoundTag;
 use protobuf::{Message, MessageField};
+use std::env;
 use std::fs::OpenOptions;
 use std::io::{stdout, Cursor, Read};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug)]
 struct ChunkCoordinate {
@@ -71,9 +67,9 @@ fn get_anvil_region_instance(
     Ok(region)
 }
 
-fn list_chunks_with_entities_in_region(region_file: &PathBuf) -> Vec<ChunkCoordinate> {
+fn list_chunks_with_entities_in_region(region_file: &Path) -> Vec<ChunkCoordinate> {
     let mut result = Vec::new();
-    let mut region = get_anvil_region_instance(&region_file).unwrap();
+    let mut region = get_anvil_region_instance(region_file).unwrap();
 
     for chunk in region.read_all_chunks().unwrap() {
         if let Some(c) = get_coordinate_if_contains_entities(&chunk).unwrap() {
@@ -85,14 +81,13 @@ fn list_chunks_with_entities_in_region(region_file: &PathBuf) -> Vec<ChunkCoordi
 }
 
 fn list_chunks_in_region_folder(
-    region_folder_path: &PathBuf,
+    region_folder_path: &Path,
     worker_count: u16,
 ) -> Vec<ChunkCoordinate> {
     let (snd_region_file_path, rcv_region_file_path) = bounded(1);
     let (snd_search_result, rcv_search_result) = bounded(1);
 
     crossbeam::scope(|s| {
-        let region_folder_path = region_folder_path.clone();
         s.spawn(move |_| {
             for region_file in region_folder_path.read_dir().unwrap() {
                 let region_file = region_file.unwrap().path();
@@ -120,20 +115,20 @@ fn list_chunks_in_region_folder(
 }
 
 fn main() {
-    let app = App::new(crate_name!())
-        .version(crate_version!())
-        .author(crate_authors!())
-        .about(crate_description!())
+    let app = App::new(clap::crate_name!())
+        .version(clap::crate_version!())
+        .author(clap::crate_authors!())
+        .about(clap::crate_description!())
         .arg(
             Arg::with_name("protobuf")
                 .help("Enables protobuf-compiled output")
-                .short("p")
+                .short('p')
                 .long("protobuf"),
         )
         .arg(
             Arg::with_name("threads")
                 .help("Number of threads used to process region files")
-                .short("t")
+                .short('t')
                 .long("threads")
                 .takes_value(true),
         )
