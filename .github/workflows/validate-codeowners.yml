@@ -1,0 +1,20 @@
+name: validate CODEOWNERS
+on:
+  pull_request:
+    path:
+      - CODEOWNERS
+  push:
+    path:
+      - CODEOWNERS
+
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: mszostok/codeowners-validator@v0.7.4
+      with:
+        # OWNER check requires token (maybe `org:read`?)
+        checks: "files,duppatterns,syntax"
+        experimental_checks: "notowned,avoid-shadowing"
