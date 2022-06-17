@@ -1,8 +1,3 @@
-#[macro_use]
-extern crate clap;
-
-use std::env;
-
 mod protos;
 
 use crate::protos::chunk_search::{Chunk, ChunkCoord, SearchResult};
@@ -11,6 +6,7 @@ use clap::{App, Arg};
 use crossbeam_channel::bounded;
 use nbt::CompoundTag;
 use protobuf::{Message, RepeatedField};
+use std::env;
 use std::fs::OpenOptions;
 use std::io::{stdout, Cursor, Read};
 use std::path::Path;
@@ -118,20 +114,20 @@ fn list_chunks_in_region_folder(
 }
 
 fn main() {
-    let app = App::new(crate_name!())
-        .version(crate_version!())
-        .author(crate_authors!())
-        .about(crate_description!())
+    let app = App::new(clap::crate_name!())
+        .version(clap::crate_version!())
+        .author(clap::crate_authors!())
+        .about(clap::crate_description!())
         .arg(
             Arg::with_name("protobuf")
                 .help("Enables protobuf-compiled output")
-                .short("p")
+                .short('p')
                 .long("protobuf"),
         )
         .arg(
             Arg::with_name("threads")
                 .help("Number of threads used to process region files")
-                .short("t")
+                .short('t')
                 .long("threads")
                 .takes_value(true),
         )
