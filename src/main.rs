@@ -5,7 +5,7 @@ use anvil_region::AnvilRegion;
 use clap::{App, Arg};
 use crossbeam_channel::bounded;
 use nbt::CompoundTag;
-use protobuf::{Message, MessageField};
+use protobuf::{Message, RepeatedField};
 use std::env;
 use std::fs::OpenOptions;
 use std::io::{stdout, Cursor, Read};
@@ -21,10 +21,9 @@ impl From<&ChunkCoordinate> for Chunk {
     fn from(cc: &ChunkCoordinate) -> Self {
         let mut chunk = Chunk::new();
         let mut coord = ChunkCoord::new();
-        coord.x = cc.x;
-        coord.z = cc.z;
-        chunk.coord = MessageField::some(coord);
-
+        coord.set_x(cc.x);
+        coord.set_z(cc.z);
+        chunk.set_coord(coord);
         chunk
     }
 }
@@ -156,7 +155,7 @@ fn main() {
         let mut search_result: SearchResult = protos::chunk_search::SearchResult::new();
         {
             let converted_result = result.iter().map(Chunk::from).collect::<Vec<_>>();
-            search_result.result = converted_result;
+            search_result.set_result(RepeatedField::from(converted_result))
         }
         search_result.write_to_writer(&mut stdout()).unwrap();
     } else {
