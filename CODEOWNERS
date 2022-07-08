@@ -1,1 +1,6 @@
+# all files are maintained by kory33, by default
 * @kory33
+
+# these actions are created by KisaragiEffective
+.github/workflows/validate-codeowners.yml @KisaragiEffective
+.github/workflows/validate-renovate.yml @KisaragiEffective
