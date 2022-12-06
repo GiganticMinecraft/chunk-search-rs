@@ -2,11 +2,10 @@ mod protos;
 
 use crate::protos::chunk_search::{Chunk, ChunkCoord, SearchResult};
 use anvil_region::AnvilRegion;
-use clap::{App, Arg};
+use clap::Parser;
 use crossbeam_channel::bounded;
 use nbt::CompoundTag;
 use protobuf::{Message, RepeatedField};
-use std::env;
 use std::fs::OpenOptions;
 use std::io::{stdout, Cursor, Read};
 use std::path::Path;
@@ -113,45 +112,30 @@ fn list_chunks_in_region_folder(
     .unwrap()
 }
 
+#[derive(Parser)]
+#[command(author, version, about)]
+struct App {
+    /// Enables protobuf-compiled output
+    #[arg(long, short)]
+    protobuf: bool,
+    /// Number of threads used to process region files
+    #[arg(long, short)]
+    threads: Option<u16>,
+    /// Location containing world data to be traversed e.g. /spigot/world
+    world_folder: String,
+}
+
 fn main() {
-    let app = App::new(clap::crate_name!())
-        .version(clap::crate_version!())
-        .author(clap::crate_authors!())
-        .about(clap::crate_description!())
-        .arg(
-            Arg::with_name("protobuf")
-                .help("Enables protobuf-compiled output")
-                .short('p')
-                .long("protobuf"),
-        )
-        .arg(
-            Arg::with_name("threads")
-                .help("Number of threads used to process region files")
-                .short('t')
-                .long("threads")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("world_folder")
-                .help("Location containing world data to be traversed e.g. /spigot/world")
-                .required(true),
-        );
+    let app = App::parse();
 
-    let matches = app.get_matches();
+    let threads = app.threads.unwrap_or(1).max(1);
 
-    let use_protobuf = matches.is_present("protobuf");
-    let threads = match matches.value_of("threads") {
-        Some(t) => t.parse::<u16>().unwrap_or(1).max(1),
-        None => 1,
-    };
-
-    let world_folder_path_str = matches.value_of("world_folder").unwrap();
-    let world_folder_path: &Path = Path::new(&world_folder_path_str);
+    let world_folder_path: &Path = Path::new(&app.world_folder);
     let region_folder_path = world_folder_path.join("region");
 
     let result = list_chunks_in_region_folder(&region_folder_path, threads);
 
-    if use_protobuf {
+    if app.protobuf {
         let mut search_result: SearchResult = protos::chunk_search::SearchResult::new();
         {
             let converted_result = result.iter().map(Chunk::from).collect::<Vec<_>>();
