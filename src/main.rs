@@ -5,11 +5,10 @@ use anvil_region::{
     provider::{FolderRegionProvider, RegionProvider},
     region::Region,
 };
-use clap::{App, Arg};
+use clap::{App, Parser};
 use crossbeam_channel::bounded;
 use nbt::CompoundTag;
 use protobuf::{Message, RepeatedField};
-use std::env;
 use std::fs::File;
 use std::io::stdout;
 use std::path::Path;
