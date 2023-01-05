@@ -5,7 +5,7 @@ use anvil_region::{
     provider::{FolderRegionProvider, RegionProvider},
     region::Region,
 };
-use clap::{App, Parser};
+use clap::Parser;
 use crossbeam_channel::bounded;
 use nbt::CompoundTag;
 use protobuf::{Message, RepeatedField};
