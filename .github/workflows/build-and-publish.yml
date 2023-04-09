@@ -5,6 +5,12 @@ on:
       - master
 jobs:
   build-and-release:
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          # see #73
+          - aarch64-apple-darwin
     name: Build binary and make a release on GitHub
     runs-on: ubuntu-latest
     steps:
@@ -17,11 +23,12 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
+          target: ${{ matrix.target }}
       - name: Build artifact
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --release
+          args: --target ${{ matrix.target }} --release
       - name: Bump version and push tag
         uses: anothrNick/github-tag-action@1.61.0
         env:
@@ -33,7 +40,7 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ./target/release/chunk-search-rs
+          files: ./target/release/chunk-search-rs_${{ matrix.target }}
           draft: false
           prerelease: false
           tag_name: ${{ steps.bump_version.outputs.new_tag }}
