@@ -4,7 +4,7 @@ on:
     branches:
       - master
 jobs:
-  build-and-release:
+  build:
     strategy:
       matrix:
         include:
@@ -14,7 +14,7 @@ jobs:
           - target: aarch64-apple-darwin
           # see #74
             runner: macos-latest
-    name: Build binary and make a release on GitHub
+    name: Build binary
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@master
@@ -32,6 +32,25 @@ jobs:
         with:
           command: build
           args: --target ${{ matrix.target }} --release
+      - name: Upload artifact
+        uses: actions/upload@v3
+        with:
+          name: chunk-search-rs_${{ matrix.target }}
+          path: ${{ github.workspace }}/target/release/chunk-search-rs
+  release:
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-apple-darwin        
+    needs: build
+    runs-on: ubuntu-latest
+    name: Push tag and release
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: chunk-search-rs_${{ matrix.target }}
+          path: ${{ github.workspace }}/target/release/chunk-search-rs_${{ matrix.target }}
       - name: Bump version and push tag
         uses: anothrNick/github-tag-action@1.61.0
         env:
