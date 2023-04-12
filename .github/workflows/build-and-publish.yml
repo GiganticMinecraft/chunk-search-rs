@@ -34,11 +34,12 @@ jobs:
           args: --target ${{ matrix.target }} --release
       - name: Debug output
         run: |
-          find ${{ github.workspace }} -type f
+          du '${{ github.workspace }}/target/${{ matrix.target }}/release/chunk-search-rs'
+          file '${{ github.workspace }}/target/${{ matrix.target }}/release/chunk-search-rs'
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: chunk-search-rs_${{ matrix.target }}
+          name: bin_${{ matrix.target }}
           path: ${{ github.workspace }}/target/${{ matrix.target }}/release/chunk-search-rs
   push_tag:
     needs: build
@@ -74,20 +75,22 @@ jobs:
         uses: actions/download-artifact@v3
         id: download
         with:
-          name: chunk-search-rs_${{ matrix.target }}
-          # CI環境上のファイル名がそのままファイル名になるっぽいのでここで調整
-          path: ${{ github.workspace }}/target/release/chunk-search-rs_${{ matrix.target }}
+          name: bin_${{ matrix.target }}
+          path: ${{ github.workspace }}
       - name: Debug output of downloaded artifact
         run: |
-          du '${{ steps.download.outputs.download-path }}'
-          file '${{ steps.download.outputs.download-path }}'
+          find '${{ steps.download.outputs.download-path }}' -type f
+      - name: Prepare release
+        run: |
+          mv ${{ github.workspace }}/bin_${{ matrix.target }}/chunk-search-rs ${{ github.workspace }}/chunk-search-rs_${{ matrix.target }}
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ${{ steps.download.outputs.download-path }}
+          files: ${{ github.workspace }}/chunk-search-rs_${{ matrix.target }}
           draft: false
           prerelease: false
           tag_name: ${{ needs.push_tag.outputs.new_tag }}
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   publish-docker-image:
