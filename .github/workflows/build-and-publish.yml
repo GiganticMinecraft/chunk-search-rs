@@ -70,7 +70,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Release
     steps:
-      - uses: actions/download-artifact@v3
+      - name: Download
+        uses: actions/download-artifact@v3
+        id: download
         with:
           name: chunk-search-rs_${{ matrix.target }}
           # CI環境上のファイル名がそのままファイル名になるっぽいのでここで調整
@@ -78,7 +80,7 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ${{ github.workspace }}/target/release/chunk-search-rs_${{ matrix.target }}
+          files: ${{ steps.download.outputs.download-path }}
           draft: false
           prerelease: false
           tag_name: ${{ needs.push_tag.outputs.new_tag }}
