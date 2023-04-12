@@ -82,7 +82,7 @@ jobs:
           find '${{ steps.download.outputs.download-path }}' -type f
       - name: Prepare release
         run: |
-          mv ${{ github.workspace }}/bin_${{ matrix.target }}/chunk-search-rs ${{ github.workspace }}/chunk-search-rs_${{ matrix.target }}
+          mv ${{ github.workspace }}/chunk-search-rs ${{ github.workspace }}/chunk-search-rs_${{ matrix.target }}
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
