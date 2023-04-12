@@ -39,21 +39,14 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: chunk-search-rs_${{ matrix.target }}
-          path: ${{ github.workspace }}/target/release/chunk-search-rs
-  release:
-    strategy:
-      matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - aarch64-apple-darwin        
+          path: ${{ github.workspace }}/target/${{ matrix.target }}/release/chunk-search-rs
+  push_tag:
     needs: build
     runs-on: ubuntu-latest
-    name: Push tag and release
+    name: Push tag
+    outputs:
+      new_tag: ${{ steps.push_tag.outputs.new_tag }}
     steps:
-      - uses: actions/download-artifact@v3
-        with:
-          name: chunk-search-rs_${{ matrix.target }}
-          path: ${{ github.workspace }}/target/release/chunk-search-rs_${{ matrix.target }}
       - name: Bump version and push tag
         uses: anothrNick/github-tag-action@1.61.0
         env:
@@ -62,13 +55,28 @@ jobs:
           WITH_V: true
           DEFAULT_BRANCH: "master"
         id: bump_version
+  release:
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-apple-darwin
+    needs: push_tag
+    runs-on: ubuntu-latest
+    name: Release
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: chunk-search-rs_${{ matrix.target }}
+          # CI環境上のファイル名がそのままファイル名になるっぽいのでここで調整
+          path: ${{ github.workspace }}/target/release/chunk-search-rs_${{ matrix.target }}
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ./target/release/chunk-search-rs_${{ matrix.target }}
+          files: ${{ github.workspace }}/target/release/chunk-search-rs_${{ matrix.target }}
           draft: false
           prerelease: false
-          tag_name: ${{ steps.bump_version.outputs.new_tag }}
+          tag_name: ${{ needs.push_tag.outputs.new_tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   publish-docker-image:
