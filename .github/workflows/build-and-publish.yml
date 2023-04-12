@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Push tag
     outputs:
-      new_tag: ${{ steps.push_tag.outputs.new_tag }}
+      new_tag: ${{ steps.bump_version.outputs.new_tag }}
     steps:
       # to push tag correctly, entire history is needed!!
       - uses: actions/checkout@master
