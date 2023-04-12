@@ -77,6 +77,10 @@ jobs:
           name: chunk-search-rs_${{ matrix.target }}
           # CI環境上のファイル名がそのままファイル名になるっぽいのでここで調整
           path: ${{ github.workspace }}/target/release/chunk-search-rs_${{ matrix.target }}
+      - name: Debug output of downloaded artifact
+        run: |
+          du '${{ steps.download.outputs.download-path }}'
+          file '${{ steps.download.outputs.download-path }}'
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
