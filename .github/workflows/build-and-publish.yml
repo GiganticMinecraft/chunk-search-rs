@@ -37,7 +37,7 @@ jobs:
           du '${{ github.workspace }}/target/${{ matrix.target }}/release/chunk-search-rs'
           file '${{ github.workspace }}/target/${{ matrix.target }}/release/chunk-search-rs'
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: bin_${{ matrix.target }}
           path: ${{ github.workspace }}/target/${{ matrix.target }}/release/chunk-search-rs
