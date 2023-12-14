@@ -72,7 +72,7 @@ jobs:
     name: Release
     steps:
       - name: Download
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         id: download
         with:
           name: bin_${{ matrix.target }}
