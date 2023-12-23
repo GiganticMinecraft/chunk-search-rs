@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: mszostok/codeowners-validator@v0.7.4
       with:
         # OWNER check requires token (maybe `org:read`?)
