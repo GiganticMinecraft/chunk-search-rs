@@ -17,5 +17,5 @@ clap = {version = "4.4.11", features = ["derive"]}
 
 # concurrent processing
 
-crossbeam = "0.8.2"
+crossbeam = "0.8.3"
 crossbeam-channel = "0.5.9"
