@@ -44,9 +44,6 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
 
-      - name: install
-        run: |
-          npm install -g renovate
       - name: validate
         run: |
-          renovate-config-validator
+          npx --yes --package renovate -- renovate-config-validator
