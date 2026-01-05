@@ -17,6 +17,11 @@
       "matchManagers": ["cargo"],
       "matchCurrentVersion": "/^0/",
       "automerge": true
+    },
+    {
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["protobuf", "protobuf-codegen"],
+      "groupName": "protobuf Rust-crates"
     }
   ]
 }
