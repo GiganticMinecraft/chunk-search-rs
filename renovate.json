@@ -1,7 +1,6 @@
 {
-  "extends": [
-    "config:base"
-  ],
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>GiganticMinecraft/renovate-config"],
   "cloneSubmodules": true,
   "packageRules": [
     {
