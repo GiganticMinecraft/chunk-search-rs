@@ -140,18 +140,24 @@ jobs:
           cache-to: type=gha,mode=max
           sbom: true
           provenance: true
+      - name: Prepare lowercase image reference
+        id: image_ref
+        run: |
+          echo "image_ref=ghcr.io/${OWNER,,}/${{ env.image_name }}" >> "$GITHUB_OUTPUT"
+        env:
+          OWNER: ${{ github.repository_owner }}
       - name: Sign container image with Cosign
         run: |
           cosign sign --yes \
-            ghcr.io/${{ github.repository_owner }}/${{ env.image_name }}@${{ steps.build.outputs.digest }}
+            ${{ steps.image_ref.outputs.image_ref }}@${{ steps.build.outputs.digest }}
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/${{ env.image_name }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ steps.image_ref.outputs.image_ref }}@${{ steps.build.outputs.digest }}
           format: 'sarif'
           output: 'trivy-results.sarif'
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: always() && steps.build.outputs.digest != ''
         with:
           sarif_file: 'trivy-results.sarif'
