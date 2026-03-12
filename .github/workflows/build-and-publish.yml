@@ -63,6 +63,7 @@ jobs:
         id: bump_version
   release:
     strategy:
+      max-parallel: 1
       matrix:
         target:
           - x86_64-unknown-linux-gnu
