@@ -33,7 +33,7 @@ impl From<&ChunkCoordinate> for Chunk {
 
 fn get_coordinate_if_contains_entities(
     chunk_nbt: &CompoundTag,
-) -> Result<Option<ChunkCoordinate>, nbt::CompoundTagError> {
+) -> Result<Option<ChunkCoordinate>, nbt::CompoundTagError<'_>> {
     let level = chunk_nbt.get_compound_tag("Level")?;
 
     let x = level.get_i32("xPos")?;

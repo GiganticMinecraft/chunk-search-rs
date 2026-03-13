@@ -9,7 +9,6 @@ fn main() {
         .unwrap();
 
     protobuf_codegen::Codegen::new()
-        // 旧protobuf-codegen-pure相当の設定
         .pure()
         .out_dir("src/protos")
         .inputs(&["protocol/chunk-search.proto"])
