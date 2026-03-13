@@ -1,4 +1,4 @@
-extern crate protobuf_codegen_pure;
+extern crate protobuf_codegen;
 
 use std::fs::DirBuilder;
 
@@ -8,9 +8,10 @@ fn main() {
         .create("src/protos")
         .unwrap();
 
-    protobuf_codegen_pure::Codegen::new()
+    protobuf_codegen::Codegen::new()
+        .pure()
         .out_dir("src/protos")
-        .inputs(&["protocol/chunk-search.proto"])
+        .inputs(["protocol/chunk-search.proto"])
         .include("protocol")
         .run()
         .expect("protoc");
