@@ -3,7 +3,7 @@ name = "chunk-search-rs"
 version = "0.1.0"
 authors = ["GiganticMinecraft"]
 description = "Command line tool to traverse MineCraft regions and list chunks containing entities or tile-entities"
-edition = "2018"
+edition = "2024"
 
 [build-dependencies]
 protobuf-codegen = "3.7.2"
