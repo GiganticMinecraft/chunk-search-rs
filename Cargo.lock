@@ -68,17 +68,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "anvil-region"
-version = "0.8.1"
-source = "git+https://github.com/GiganticMinecraft/anvil-region?rev=8dd1ca732686cac19f9957300414319108c07341#8dd1ca732686cac19f9957300414319108c07341"
-dependencies = [
- "bitvec",
- "byteorder",
- "log",
- "named-binary-tag",
-]
-
-[[package]]
 name = "anyhow"
 version = "1.0.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -95,16 +84,6 @@ name = "bitflags"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
-
-[[package]]
-name = "bitvec"
-version = "0.17.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41262f11d771fd4a61aa3ce019fca363b4b6c282fca9da2a31186d3965a47a5c"
-dependencies = [
- "either",
- "radium",
-]
 
 [[package]]
 name = "byteorder"
@@ -128,7 +107,6 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "chunk-search-rs"
 version = "0.1.0"
 dependencies = [
- "anvil-region",
  "clap",
  "crossbeam",
  "crossbeam-channel",
@@ -489,12 +467,6 @@ name = "r-efi"
 version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
-
-[[package]]
-name = "radium"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "def50a86306165861203e7f84ecffbbdfdea79f0e51039b33de1e952358c47ac"
 
 [[package]]
 name = "regex"
