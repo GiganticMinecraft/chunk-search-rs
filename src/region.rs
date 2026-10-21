@@ -9,8 +9,7 @@
 //! 圧縮種別の bit 128 が立っている場合、本体は同じディレクトリの `c.<chunk x>.<chunk z>.mcc`
 //! に外部ファイル化されている (下位 bit が実際の圧縮種別)。
 
-use nbt::CompoundTag;
-use nbt::decode::{read_compound_tag, read_gzip_compound_tag, read_zlib_compound_tag};
+use crate::nbt::{Compound, read_compound_tag, read_gzip_compound_tag, read_zlib_compound_tag};
 use std::fmt;
 use std::fs;
 use std::io;
@@ -127,19 +126,14 @@ pub fn list_region_files(dir: &Path) -> Result<Vec<RegionFile>, FatalError> {
     Ok(files)
 }
 
-fn decode(scheme: u8, mut data: &[u8]) -> Result<CompoundTag, String> {
+fn decode(scheme: u8, mut data: &[u8]) -> Result<Compound, String> {
     let result = match scheme {
-        1 => read_gzip_compound_tag(&mut data),
-        2 => read_zlib_compound_tag(&mut data),
+        1 => read_gzip_compound_tag(data),
+        2 => read_zlib_compound_tag(data),
         3 => read_compound_tag(&mut data),
         _ => unreachable!("checked by caller"),
     };
-    result.map_err(|e| match e {
-        nbt::decode::TagDecodeError::IOError { io_error } => {
-            format!("NBT decode error: {io_error}")
-        }
-        e => format!("NBT decode error: {e}"),
-    })
+    result.map_err(|e| format!("NBT decode error: {e}"))
 }
 
 /// region ファイルの全チャンクを読み、デコードできたものを `on_chunk` に渡す。
@@ -148,7 +142,7 @@ fn decode(scheme: u8, mut data: &[u8]) -> Result<CompoundTag, String> {
 pub fn for_each_chunk(
     path: &Path,
     region: (i32, i32),
-    mut on_chunk: impl FnMut((i32, i32), CompoundTag),
+    mut on_chunk: impl FnMut((i32, i32), Compound),
 ) -> Result<Vec<ChunkWarning>, FatalError> {
     let data = fs::read(path).map_err(|source| FatalError::Io {
         path: path.to_path_buf(),
