@@ -10,7 +10,7 @@
 //! に外部ファイル化されている (下位 bit が実際の圧縮種別)。
 
 use crate::nbt::{
-    DecodeError, Tag, read_compound_tag, read_gzip_compound_tag, read_zlib_compound_tag,
+    Compound, DecodeError, read_compound_tag, read_gzip_compound_tag, read_zlib_compound_tag,
 };
 use std::fmt;
 use std::fs;
@@ -128,7 +128,7 @@ pub fn list_region_files(dir: &Path) -> Result<Vec<RegionFile>, FatalError> {
     Ok(files)
 }
 
-fn decode(scheme: u8, mut data: &[u8]) -> Result<Tag, String> {
+fn decode(scheme: u8, mut data: &[u8]) -> Result<Compound, String> {
     let result = match scheme {
         1 => read_gzip_compound_tag(data),
         2 => read_zlib_compound_tag(data),
@@ -147,7 +147,7 @@ fn decode(scheme: u8, mut data: &[u8]) -> Result<Tag, String> {
 pub fn for_each_chunk(
     path: &Path,
     region: (i32, i32),
-    mut on_chunk: impl FnMut((i32, i32), Tag),
+    mut on_chunk: impl FnMut((i32, i32), Compound),
 ) -> Result<Vec<ChunkWarning>, FatalError> {
     let data = fs::read(path).map_err(|source| FatalError::Io {
         path: path.to_path_buf(),

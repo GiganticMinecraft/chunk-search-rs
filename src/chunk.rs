@@ -1,6 +1,6 @@
 //! チャンク NBT からエンティティ / ブロックエンティティの有無を判定する。
 
-use crate::nbt::Tag;
+use crate::nbt::{Compound, Tag};
 
 /// 21w43a (1.18 開発版)。これ以降のチャンクは `Level` が無くなり、フィールドがルート直下に置かれる。
 pub const DATA_VERSION_21W43A: i32 = 2844;
@@ -14,7 +14,7 @@ fn wrong_type(name: &str, actual: &Tag) -> String {
     format!("Tag {name} has type {}", actual.type_name())
 }
 
-fn required<'a>(tag: &'a Tag, name: &str) -> Result<&'a Tag, String> {
+fn required<'a>(tag: &'a Compound, name: &str) -> Result<&'a Tag, String> {
     tag.get(name).ok_or_else(|| not_found(name))
 }
 
@@ -25,29 +25,29 @@ fn as_i32(value: &Tag, name: &str) -> Result<i32, String> {
     }
 }
 
-fn get_i32(tag: &Tag, name: &str) -> Result<i32, String> {
+fn get_i32(tag: &Compound, name: &str) -> Result<i32, String> {
     as_i32(required(tag, name)?, name)
 }
 
-fn get_compound<'a>(tag: &'a Tag, name: &str) -> Result<&'a Tag, String> {
+fn get_compound<'a>(tag: &'a Compound, name: &str) -> Result<&'a Compound, String> {
     match required(tag, name)? {
-        v @ Tag::Compound(_) => Ok(v),
+        Tag::Compound(v) => Ok(v),
         other => Err(wrong_type(name, other)),
     }
 }
 
 /// リスト型タグが存在して 1 要素以上あるか。存在しなければ false。
-fn has_entries(tag: &Tag, name: &str) -> Result<bool, String> {
+fn has_entries(tag: &Compound, name: &str) -> Result<bool, String> {
     match tag.get(name) {
         None => Ok(false),
-        Some(Tag::List(v)) => Ok(!v.is_empty()),
+        Some(Tag::List(len)) => Ok(*len > 0),
         Some(other) => Err(wrong_type(name, other)),
     }
 }
 
 /// `names` のいずれかのリストに要素があれば true。
 /// 一部のリストが壊れていても、他のリストに要素があれば true を返す。
-fn any_has_entries(tag: &Tag, names: &[&str]) -> Result<bool, String> {
+fn any_has_entries(tag: &Compound, names: &[&str]) -> Result<bool, String> {
     let mut first_error = None;
     for name in names {
         match has_entries(tag, name) {
@@ -67,13 +67,13 @@ fn any_has_entries(tag: &Tag, names: &[&str]) -> Result<bool, String> {
 ///   (未完成チャンクの `entities` も見る)
 /// - それ未満または DataVersion 無し (1.17 以前): `Level` 配下の `xPos`/`zPos`/`Entities`/`TileEntities`。
 ///   1.17 では `Entities` が `entities/` に移ったので無くてもよい。
-pub fn region_chunk_with_entities(chunk: &Tag) -> Result<Option<(i32, i32)>, String> {
+pub fn region_chunk_with_entities(chunk: &Compound) -> Result<Option<(i32, i32)>, String> {
     let data_version = chunk
         .get("DataVersion")
         .map(|v| as_i32(v, "DataVersion"))
         .transpose()?;
 
-    let (base, entity_lists): (&Tag, &[&str]) = match data_version {
+    let (base, entity_lists): (&Compound, &[&str]) = match data_version {
         Some(v) if v >= DATA_VERSION_21W43A => (chunk, &["block_entities", "entities"]),
         _ => (get_compound(chunk, "Level")?, &["TileEntities", "Entities"]),
     };
@@ -85,7 +85,7 @@ pub fn region_chunk_with_entities(chunk: &Tag) -> Result<Option<(i32, i32)>, Str
 }
 
 /// `entities/` (1.17 以降) のチャンク NBT を調べ、エンティティを含むならチャンク座標を返す。
-pub fn entity_chunk_with_entities(chunk: &Tag) -> Result<Option<(i32, i32)>, String> {
+pub fn entity_chunk_with_entities(chunk: &Compound) -> Result<Option<(i32, i32)>, String> {
     if !has_entries(chunk, "Entities")? {
         return Ok(None);
     }
@@ -106,52 +106,47 @@ pub fn entity_chunk_with_entities(chunk: &Tag) -> Result<Option<(i32, i32)>, Str
 mod tests {
     use super::*;
 
-    fn compound<const N: usize>(entries: [(&str, Tag); N]) -> Tag {
-        Tag::Compound(
-            entries
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v))
-                .collect(),
-        )
+    fn compound<const N: usize>(entries: [(&str, Tag); N]) -> Compound {
+        entries
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect()
     }
 
-    fn set(tag: &mut Tag, name: &str, value: Tag) {
-        let Tag::Compound(map) = tag else {
-            panic!("not a compound")
-        };
-        map.insert(name.to_string(), value);
+    fn set(tag: &mut Compound, name: &str, value: Tag) {
+        tag.insert(name.to_string(), value);
     }
 
-    fn level_mut(tag: &mut Tag) -> &mut Tag {
-        let Tag::Compound(map) = tag else {
-            panic!("not a compound")
-        };
-        map.get_mut("Level").unwrap()
+    fn level_mut(tag: &mut Compound) -> &mut Compound {
+        match tag.get_mut("Level") {
+            Some(Tag::Compound(level)) => level,
+            _ => panic!("Level is not a compound"),
+        }
     }
 
-    fn chest() -> Tag {
-        compound([("id", Tag::String)])
+    fn list(len: u32) -> Tag {
+        Tag::List(len)
     }
 
-    fn chunk_118(be: Vec<Tag>) -> Tag {
+    fn chunk_118(be: u32) -> Compound {
         compound([
             ("DataVersion", Tag::Int(2975)),
             ("xPos", Tag::Int(3)),
             ("zPos", Tag::Int(-4)),
-            ("block_entities", Tag::List(be)),
+            ("block_entities", list(be)),
         ])
     }
 
-    fn chunk_legacy(data_version: Option<i32>, entities: Option<Vec<Tag>>, te: Vec<Tag>) -> Tag {
+    fn chunk_legacy(data_version: Option<i32>, entities: Option<u32>, te: u32) -> Compound {
         let mut level = compound([
             ("xPos", Tag::Int(-1)),
             ("zPos", Tag::Int(2)),
-            ("TileEntities", Tag::List(te)),
+            ("TileEntities", list(te)),
         ]);
         if let Some(e) = entities {
-            set(&mut level, "Entities", Tag::List(e));
+            set(&mut level, "Entities", list(e));
         }
-        let mut c = compound([("Level", level)]);
+        let mut c = compound([("Level", Tag::Compound(level))]);
         if let Some(v) = data_version {
             set(&mut c, "DataVersion", Tag::Int(v));
         }
@@ -160,39 +155,36 @@ mod tests {
 
     #[test]
     fn reads_118_block_entities() {
-        assert_eq!(
-            region_chunk_with_entities(&chunk_118(vec![chest()])),
-            Ok(Some((3, -4)))
-        );
-        assert_eq!(region_chunk_with_entities(&chunk_118(vec![])), Ok(None));
+        assert_eq!(region_chunk_with_entities(&chunk_118(1)), Ok(Some((3, -4))));
+        assert_eq!(region_chunk_with_entities(&chunk_118(0)), Ok(None));
     }
 
     #[test]
     fn reads_legacy_formats() {
         // 1.12 (DataVersion 無し)
         assert_eq!(
-            region_chunk_with_entities(&chunk_legacy(None, Some(vec![]), vec![chest()])),
+            region_chunk_with_entities(&chunk_legacy(None, Some(0), 1)),
             Ok(Some((-1, 2)))
         );
         // 1.16 Entities のみ
         assert_eq!(
-            region_chunk_with_entities(&chunk_legacy(Some(2586), Some(vec![chest()]), vec![])),
+            region_chunk_with_entities(&chunk_legacy(Some(2586), Some(1), 0)),
             Ok(Some((-1, 2)))
         );
         // 1.17 (Entities 無し)
         assert_eq!(
-            region_chunk_with_entities(&chunk_legacy(Some(2730), None, vec![])),
+            region_chunk_with_entities(&chunk_legacy(Some(2730), None, 0)),
             Ok(None)
         );
     }
 
     #[test]
     fn broken_list_does_not_hide_other_list() {
-        let mut c = chunk_legacy(Some(2586), Some(vec![chest()]), vec![]);
+        let mut c = chunk_legacy(Some(2586), Some(1), 0);
         set(level_mut(&mut c), "TileEntities", Tag::Int(0));
         assert_eq!(region_chunk_with_entities(&c), Ok(Some((-1, 2))));
 
-        set(level_mut(&mut c), "Entities", Tag::List(vec![]));
+        set(level_mut(&mut c), "Entities", list(0));
         assert_eq!(
             region_chunk_with_entities(&c),
             Err("Tag TileEntities has type TAG_Int".to_string())
@@ -212,11 +204,11 @@ mod tests {
     fn reads_entity_chunks() {
         let mut c = compound([
             ("Position", Tag::IntArray(vec![-5, 7])),
-            ("Entities", Tag::List(vec![chest()])),
+            ("Entities", list(1)),
         ]);
         assert_eq!(entity_chunk_with_entities(&c), Ok(Some((-5, 7))));
 
-        set(&mut c, "Entities", Tag::List(vec![]));
+        set(&mut c, "Entities", list(0));
         assert_eq!(entity_chunk_with_entities(&c), Ok(None));
     }
 }
