@@ -12,6 +12,7 @@ use std::fmt::Display;
 use std::io::{Write, stdout};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// stderr に出す警告・エラーそれぞれの上限。
 ///
@@ -82,12 +83,23 @@ fn process_file(job: &Job) -> Result<JobOutput, FatalError> {
 
 /// ワールドフォルダからディメンションのデータが置かれたフォルダを探す。
 ///
-/// 通常は `<world>/region`。`region` が無い場合は Bukkit のネザー / エンドのワールドフォルダ
-/// (`world_nether/DIM-1/region`, `world_the_end/DIM1/region`) を探す。
+/// 通常は `<world>/region`。Bukkit のネザー / エンドのワールドフォルダ
+/// (`world_nether/DIM-1/region`, `world_the_end/DIM1/region`) にも対応する。
+/// region ファイルを含む候補を優先し (空の `<world>/region` が `DIM-1` を隠さないように)、
+/// どれにも無ければ `region` ディレクトリがある最初の候補を使う。
 fn find_dimension_folder(world: &Path) -> Option<PathBuf> {
-    [world.to_path_buf(), world.join("DIM-1"), world.join("DIM1")]
+    let candidates: Vec<PathBuf> = [world.to_path_buf(), world.join("DIM-1"), world.join("DIM1")]
         .into_iter()
-        .find(|dir| dir.join("region").is_dir())
+        .filter(|dir| dir.join("region").is_dir())
+        .collect();
+    let has_region_files = |dir: &PathBuf| {
+        region::list_region_files(&dir.join("region")).is_ok_and(|files| !files.is_empty())
+    };
+    candidates
+        .iter()
+        .find(|dir| has_region_files(dir))
+        .or(candidates.first())
+        .cloned()
 }
 
 fn collect_jobs(dimension_folder: &Path) -> Result<Vec<Job>, FatalError> {
@@ -145,11 +157,14 @@ struct SearchOutcome {
 fn search(jobs: Vec<Job>, worker_count: u16) -> SearchOutcome {
     let (snd_job, rcv_job) = bounded::<Job>(1);
     let (snd_result, rcv_result) = bounded(1);
+    // 致命的エラーが出たら結果は捨てるので、残りのファイルは読まない
+    let aborted = AtomicBool::new(false);
+    let aborted = &aborted;
 
     crossbeam::scope(|s| {
         s.spawn(move |_| {
             for job in jobs {
-                if snd_job.send(job).is_err() {
+                if aborted.load(Ordering::Relaxed) || snd_job.send(job).is_err() {
                     break;
                 }
             }
@@ -159,6 +174,9 @@ fn search(jobs: Vec<Job>, worker_count: u16) -> SearchOutcome {
             let (snd_result, rcv_job) = (snd_result.clone(), rcv_job.clone());
             s.spawn(move |_| {
                 for job in rcv_job.iter() {
+                    if aborted.load(Ordering::Relaxed) {
+                        continue;
+                    }
                     let _ = snd_result.send(process_file(&job));
                 }
             });
@@ -174,7 +192,10 @@ fn search(jobs: Vec<Job>, worker_count: u16) -> SearchOutcome {
                     output.warnings.iter().for_each(|w| warnings.print(w));
                     chunks.extend(output.chunks);
                 }
-                Err(e) => errors.print(e),
+                Err(e) => {
+                    aborted.store(true, Ordering::Relaxed);
+                    errors.print(e);
+                }
             }
         }
         warnings.finish();

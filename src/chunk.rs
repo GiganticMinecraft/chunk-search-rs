@@ -1,6 +1,6 @@
 //! チャンク NBT からエンティティ / ブロックエンティティの有無を判定する。
 
-use nbt::{CompoundTag, CompoundTagError};
+use nbt::{CompoundTag, CompoundTagError, Tag};
 
 /// 21w43a (1.18 開発版)。これ以降のチャンクは `Level` が無くなり、フィールドがルート直下に置かれる。
 pub const DATA_VERSION_21W43A: i32 = 2844;
@@ -15,7 +15,23 @@ fn optional<T>(result: Result<T, CompoundTagError<'_>>) -> Result<Option<T>, Str
 
 /// リスト型タグが存在して 1 要素以上あるか。存在しなければ false。
 fn has_entries(tag: &CompoundTag, name: &str) -> Result<bool, String> {
-    Ok(optional(tag.get_compound_tag_vec(name))?.is_some_and(|v| !v.is_empty()))
+    Ok(optional(tag.get::<&Vec<Tag>>(name))?.is_some_and(|v| !v.is_empty()))
+}
+
+/// `names` のいずれかのリストに要素があれば true。
+/// 一部のリストが壊れていても、他のリストに要素があれば true を返す。
+fn any_has_entries(tag: &CompoundTag, names: &[&str]) -> Result<bool, String> {
+    let mut first_error = None;
+    for name in names {
+        match has_entries(tag, name) {
+            Ok(true) => return Ok(true),
+            Ok(false) => {}
+            Err(e) => {
+                first_error.get_or_insert(e);
+            }
+        }
+    }
+    first_error.map_or(Ok(false), Err)
 }
 
 /// `region/` のチャンク NBT を調べ、エンティティかブロックエンティティを含むならチャンク座標を返す。
@@ -38,12 +54,7 @@ pub fn region_chunk_with_entities(chunk: &CompoundTag) -> Result<Option<(i32, i3
     let x = base.get_i32("xPos").map_err(|e| e.to_string())?;
     let z = base.get_i32("zPos").map_err(|e| e.to_string())?;
 
-    for name in entity_lists {
-        if has_entries(base, name)? {
-            return Ok(Some((x, z)));
-        }
-    }
-    Ok(None)
+    Ok(any_has_entries(base, entity_lists)?.then_some((x, z)))
 }
 
 /// `entities/` (1.17 以降) のチャンク NBT を調べ、エンティティを含むならチャンク座標を返す。
@@ -126,6 +137,19 @@ mod tests {
             region_chunk_with_entities(&chunk_legacy(Some(2730), None, vec![])),
             Ok(None)
         );
+    }
+
+    #[test]
+    fn broken_list_does_not_hide_other_list() {
+        let mut c = chunk_legacy(Some(2586), Some(vec![chest()]), vec![]);
+        let mut level = c.get_compound_tag("Level").unwrap().clone();
+        level.insert_i32("TileEntities", 0);
+        c.insert_compound_tag("Level", level.clone());
+        assert_eq!(region_chunk_with_entities(&c), Ok(Some((-1, 2))));
+
+        level.insert_compound_tag_vec("Entities", vec![]);
+        c.insert_compound_tag("Level", level);
+        assert!(region_chunk_with_entities(&c).is_err());
     }
 
     #[test]

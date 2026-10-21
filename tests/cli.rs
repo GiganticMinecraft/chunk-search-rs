@@ -202,3 +202,70 @@ fn warnings_are_capped() {
         "{stderr}"
     );
 }
+
+/// 1 チャンクだけ入った region を作る。`patch` でヘッダ / チャンクデータを書き換える。
+fn single_chunk_region(world: &Path, patch: impl FnOnce(&mut Vec<u8>)) {
+    let mut data = fs::read(fixture("w1182/region/r.0.0.mca")).unwrap();
+    patch(&mut data);
+    fs::write(world.join("region/r.1.0.mca"), data).unwrap();
+}
+
+#[test]
+fn broken_chunk_headers_are_skipped_with_warning() {
+    let world = scratch_world("w_broken_headers");
+    fs::create_dir(world.join("region")).unwrap();
+    fs::copy(
+        fixture("w1182/region/r.0.0.mca"),
+        world.join("region/r.0.0.mca"),
+    )
+    .unwrap();
+    // 圧縮種別 0 (存在しない値) は壊れたチャンク扱い
+    single_chunk_region(&world, |d| d[8192 + 4] = 0);
+    let stderr = assert_chunks(&world, &[(0, 0)]);
+    assert!(stderr.contains("invalid compression scheme 0"), "{stderr}");
+
+    // セクタ数 0 の location
+    single_chunk_region(&world, |d| d[3] = 0);
+    let stderr = assert_chunks(&world, &[(0, 0)]);
+    assert!(stderr.contains("sector count is zero"), "{stderr}");
+
+    // length が確保されたセクタを超える
+    single_chunk_region(&world, |d| {
+        d[8192..8196].copy_from_slice(&5000u32.to_be_bytes());
+        d.extend([0u8; 4096]);
+    });
+    let stderr = assert_chunks(&world, &[(0, 0)]);
+    assert!(stderr.contains("allocated sectors"), "{stderr}");
+}
+
+#[test]
+fn empty_top_level_region_does_not_hide_nether() {
+    let world = scratch_world("w_nether_with_empty_region");
+    fs::create_dir(world.join("region")).unwrap();
+    fs::create_dir_all(world.join("DIM-1/region")).unwrap();
+    fs::copy(
+        fixture("w1182_mixed/region/r.0.0.mca"),
+        world.join("DIM-1/region/r.0.0.mca"),
+    )
+    .unwrap();
+    assert_eq!(assert_chunks(&world, &[(0, 0), (1, 0)]), "");
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinked_region_files_are_read() {
+    let world = scratch_world("w_symlink");
+    fs::create_dir(world.join("region")).unwrap();
+    std::os::unix::fs::symlink(
+        fixture("w1182/region/r.0.0.mca"),
+        world.join("region/r.0.0.mca"),
+    )
+    .unwrap();
+    // 非正規の名前のコピーは読まない
+    fs::copy(
+        fixture("w1182_mixed/region/r.0.0.mca"),
+        world.join("region/r.00.0.mca"),
+    )
+    .unwrap();
+    assert_eq!(assert_chunks(&world, &[(0, 0)]), "");
+}

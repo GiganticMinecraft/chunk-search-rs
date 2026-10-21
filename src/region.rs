@@ -93,7 +93,9 @@ impl fmt::Display for ChunkWarning {
 pub fn parse_region_file_name(name: &str) -> Option<(i32, i32)> {
     let rest = name.strip_prefix("r.")?.strip_suffix(".mca")?;
     let (x, z) = rest.split_once('.')?;
-    Some((x.parse().ok()?, z.parse().ok()?))
+    let coords: (i32, i32) = (x.parse().ok()?, z.parse().ok()?);
+    // `r.01.0.mca` や `r.+1.0.mca` のような非正規の名前は Minecraft が読まない (バックアップの残骸など)
+    (format!("r.{}.{}.mca", coords.0, coords.1) == name).then_some(coords)
 }
 
 /// region ファイルのパスとリージョン座標。
@@ -112,8 +114,10 @@ pub fn list_region_files(dir: &Path) -> Result<Vec<RegionFile>, FatalError> {
         let Some(coords) = name.to_str().and_then(parse_region_file_name) else {
             continue;
         };
-        if entry.file_type().map_err(io_err)?.is_file() {
-            files.push((entry.path(), coords));
+        // シンボリックリンクの先も見る
+        let path = entry.path();
+        if fs::metadata(&path).map_err(io_err)?.is_file() {
+            files.push((path, coords));
         }
     }
     files.sort();
@@ -175,12 +179,23 @@ pub fn for_each_chunk(
             continue; // 未生成
         }
         let offset = (loc >> 8) as usize * SECTOR_SIZE;
+        let sectors = (loc & 0xff) as usize;
         if offset < HEADER_SIZE {
             warn(format!("invalid sector offset {}", loc >> 8));
             continue;
         }
-        let Some(head) = data.get(offset..offset + 5) else {
+        if sectors == 0 {
+            warn("sector count is zero".to_string());
+            continue;
+        }
+        // Minecraft と同様、location が確保しているセクタの範囲だけを読む
+        let Some(sector_data) = data.get(offset..(offset + sectors * SECTOR_SIZE).min(data.len()))
+        else {
             warn(format!("sector offset {} is beyond end of file", loc >> 8));
+            continue;
+        };
+        let Some(head) = sector_data.get(0..5) else {
+            warn("chunk header is truncated".to_string());
             continue;
         };
         let length = u32::from_be_bytes(head[0..4].try_into().unwrap()) as usize;
@@ -190,12 +205,22 @@ pub fn for_each_chunk(
             continue;
         }
         let scheme = compression & !EXTERNAL_FLAG;
-        if !(1..=3).contains(&scheme) {
-            return Err(FatalError::UnsupportedCompression {
-                path: path.to_path_buf(),
-                local,
-                scheme: compression,
-            });
+        match scheme {
+            1..=3 => {}
+            // 実在するが未対応の形式 (4 = LZ4 (1.20.5+)、127 = カスタム (24w04a+))。
+            // ワールド全体を読めていない可能性が高いので致命的エラーにする。
+            4 | 127 => {
+                return Err(FatalError::UnsupportedCompression {
+                    path: path.to_path_buf(),
+                    local,
+                    scheme: compression,
+                });
+            }
+            // それ以外はヘッダが壊れたチャンク
+            _ => {
+                warn(format!("invalid compression scheme {compression}"));
+                continue;
+            }
         }
 
         let nbt = if compression & EXTERNAL_FLAG != 0 {
@@ -217,9 +242,11 @@ pub fn for_each_chunk(
                 }
             }
         } else {
-            match data.get(offset + 5..offset + 4 + length) {
+            match sector_data.get(5..4 + length) {
                 Some(body) => decode(scheme, body),
-                None => Err(format!("chunk data ({length} bytes) runs past end of file")),
+                None => Err(format!(
+                    "chunk data ({length} bytes) runs past its {sectors} allocated sectors"
+                )),
             }
         };
 
@@ -244,5 +271,8 @@ mod tests {
         assert_eq!(parse_region_file_name("c.0.0.mcc"), None);
         assert_eq!(parse_region_file_name("r.0.mca"), None);
         assert_eq!(parse_region_file_name("r.a.0.mca"), None);
+        assert_eq!(parse_region_file_name("r.01.0.mca"), None);
+        assert_eq!(parse_region_file_name("r.+1.0.mca"), None);
+        assert_eq!(parse_region_file_name("r.-0.0.mca"), None);
     }
 }
