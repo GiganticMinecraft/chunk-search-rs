@@ -31,7 +31,7 @@ fn get_i32(tag: &Compound, name: &str) -> Result<i32, String> {
 
 fn get_compound<'a>(tag: &'a Compound, name: &str) -> Result<&'a Compound, String> {
     match required(tag, name)? {
-        Tag::Compound(v) => Ok(v),
+        Tag::Compound(v) => Ok(v.as_ref()),
         other => Err(wrong_type(name, other)),
     }
 }
@@ -93,7 +93,7 @@ pub fn entity_chunk_with_entities(chunk: &Compound) -> Result<Option<(i32, i32)>
         Tag::IntArray(position) => position,
         other => return Err(wrong_type("Position", other)),
     };
-    match position.as_slice() {
+    match &position[..] {
         [x, z] => Ok(Some((*x, *z))),
         other => Err(format!(
             "Position must have 2 elements but has {}",
@@ -107,14 +107,11 @@ mod tests {
     use super::*;
 
     fn compound<const N: usize>(entries: [(&str, Tag); N]) -> Compound {
-        entries
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect()
+        entries.into_iter().map(|(k, v)| (k.into(), v)).collect()
     }
 
     fn set(tag: &mut Compound, name: &str, value: Tag) {
-        tag.insert(name.to_string(), value);
+        tag.insert(name.into(), value);
     }
 
     fn level_mut(tag: &mut Compound) -> &mut Compound {
@@ -146,7 +143,7 @@ mod tests {
         if let Some(e) = entities {
             set(&mut level, "Entities", list(e));
         }
-        let mut c = compound([("Level", Tag::Compound(level))]);
+        let mut c = compound([("Level", Tag::Compound(Box::new(level)))]);
         if let Some(v) = data_version {
             set(&mut c, "DataVersion", Tag::Int(v));
         }
@@ -203,7 +200,7 @@ mod tests {
     #[test]
     fn reads_entity_chunks() {
         let mut c = compound([
-            ("Position", Tag::IntArray(vec![-5, 7])),
+            ("Position", Tag::IntArray(vec![-5, 7].into())),
             ("Entities", list(1)),
         ]);
         assert_eq!(entity_chunk_with_entities(&c), Ok(Some((-5, 7))));

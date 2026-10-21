@@ -23,10 +23,13 @@ use std::collections::HashMap;
 use std::fmt;
 use std::io::{self, Read};
 
-/// コンパウンドタグの中身。
-pub type Compound = HashMap<String, Tag>;
+/// コンパウンドタグの中身。キーが多いチャンクでもメモリを抑えるため、キーは `Box<str>` で持つ。
+pub type Compound = HashMap<Box<str>, Tag>;
 
 /// デコード結果のタグ。判定に使わない値は中身を持たない。
+///
+/// コンパウンドのエントリ数に比例してメモリを使うので、大きな中身は Box に入れて
+/// `Tag` 自体を小さく (24 byte) 保っている。
 #[derive(Debug, Clone, PartialEq)]
 pub enum Tag {
     Byte,
@@ -39,8 +42,8 @@ pub enum Tag {
     String,
     /// 要素は保持せず、要素数だけを持つ。
     List(u32),
-    Compound(Compound),
-    IntArray(Vec<i32>),
+    Compound(Box<Compound>),
+    IntArray(Box<[i32]>),
     LongArray,
 }
 
@@ -52,11 +55,11 @@ impl Drop for Tag {
         let Tag::Compound(tags) = self else {
             return;
         };
-        let mut pending = vec![std::mem::take(tags)];
+        let mut pending = vec![std::mem::take(&mut **tags)];
         while let Some(mut tags) = pending.pop() {
             for (_, mut child) in tags.drain() {
                 if let Tag::Compound(grandchildren) = &mut child {
-                    pending.push(std::mem::take(grandchildren));
+                    pending.push(std::mem::take(&mut **grandchildren));
                 }
                 // child の中身は空にしてあるので、ここでの解放は再帰しない
             }
@@ -137,7 +140,7 @@ pub fn read_compound_tag<R: Read>(reader: &mut R) -> Result<Compound, DecodeErro
     skip_string(reader)?;
     match &mut read_tag(tag_id, reader)? {
         // Tag は Drop を実装しているので中身は take で取り出す
-        Tag::Compound(tags) => Ok(std::mem::take(tags)),
+        Tag::Compound(tags) => Ok(std::mem::take(&mut **tags)),
         other => Err(DecodeError::RootMustBeCompoundTag {
             actual_type: other.type_name(),
         }),
@@ -184,15 +187,15 @@ fn skip_string<R: Read>(reader: &mut R) -> io::Result<()> {
     skip(reader, len.into())
 }
 
-fn read_name<R: Read>(reader: &mut R) -> io::Result<String> {
+fn read_name<R: Read>(reader: &mut R) -> io::Result<Box<str>> {
     let len = read_u16(reader)?;
     let mut buf = vec![0; len as usize];
     reader.read_exact(&mut buf)?;
-    Ok(String::from_utf8_lossy(&buf).into_owned())
+    Ok(String::from_utf8_lossy(&buf).into())
 }
 
 /// int 配列の本体を読む。長さが壊れていても巨大な確保をしないよう、実際に読めた分だけ確保する。
-fn read_int_array<R: Read>(reader: &mut R, len: u32) -> io::Result<Vec<i32>> {
+fn read_int_array<R: Read>(reader: &mut R, len: u32) -> io::Result<Box<[i32]>> {
     let byte_len = u64::from(len) * 4;
     let mut buf = Vec::new();
     reader.by_ref().take(byte_len).read_to_end(&mut buf)?;
@@ -247,7 +250,7 @@ enum Frame {
     Compound {
         tags: Compound,
         keep: bool,
-        key: Option<String>,
+        key: Option<Box<str>>,
     },
     List {
         element_id: u8,
@@ -311,14 +314,14 @@ fn read_tag<R: Read>(tag_id: u8, reader: &mut R) -> Result<Tag, DecodeError> {
                         let Some(Frame::Compound { tags, keep, .. }) = stack.pop() else {
                             unreachable!()
                         };
-                        finished = Some(keep.then_some(Tag::Compound(tags)));
+                        finished = Some(keep.then(|| Tag::Compound(Box::new(tags))));
                         continue;
                     }
                     *key = Some(if *keep {
                         read_name(reader)?
                     } else {
                         skip_string(reader)?;
-                        String::new()
+                        Box::default()
                     });
                     next = Some((id, *keep));
                     break;
@@ -371,8 +374,16 @@ mod tests {
         payload.push(0);
         let root = decode(&named(10, b"", &payload)).unwrap();
         assert_eq!(root.get("xPos"), Some(&Tag::Int(-3)));
-        assert_eq!(root.get("Position"), Some(&Tag::IntArray(vec![1, -2])));
+        assert_eq!(
+            root.get("Position"),
+            Some(&Tag::IntArray(vec![1, -2].into()))
+        );
         assert_eq!(root.get("Entities"), Some(&Tag::List(1)));
+    }
+
+    #[test]
+    fn tag_stays_small() {
+        assert_eq!(std::mem::size_of::<Tag>(), 24);
     }
 
     #[test]
