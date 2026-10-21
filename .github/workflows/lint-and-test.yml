@@ -25,3 +25,18 @@ jobs:
       - name: Cargo test
         run:
           cargo test --all-features
+      # 本番 (seichi_infra の Minecraft サーバーイメージ) は glibc 2.31 の Ubuntu 20.04 で動いている。
+      # リリースと同じく glibc を静的リンクしたバイナリが、古い glibc の環境でも起動することを確かめる
+      - name: Build statically linked release binary
+        run:
+          cargo build --release --target x86_64-unknown-linux-gnu
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+crt-static
+      - name: Run the static binary on Ubuntu 20.04 (glibc 2.31)
+        run: |
+          file target/x86_64-unknown-linux-gnu/release/chunk-search-rs | grep -E 'static(-pie|ally) linked'
+          docker run --rm -v "$PWD:/w" -w /w ubuntu:20.04 sh -c '
+            ldd --version | head -n 1
+            ./target/x86_64-unknown-linux-gnu/release/chunk-search-rs --version
+            ./target/x86_64-unknown-linux-gnu/release/chunk-search-rs tests/fixtures/worlds/w1182
+          '
