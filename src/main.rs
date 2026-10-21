@@ -1,19 +1,25 @@
+mod chunk;
 mod protos;
+mod region;
 
 use crate::protos::chunk_search::{Chunk, ChunkCoord, SearchResult};
-use anvil_region::{
-    provider::{FolderRegionProvider, RegionProvider},
-    region::Region,
-};
+use crate::region::{ChunkWarning, FatalError};
 use clap::Parser;
 use crossbeam_channel::bounded;
-use nbt::CompoundTag;
 use protobuf::{Message, MessageField};
-use std::fs::File;
-use std::io::stdout;
-use std::path::Path;
+use std::collections::BTreeSet;
+use std::fmt::Display;
+use std::io::{Write, stdout};
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
-#[derive(Debug)]
+/// stderr に出す警告・エラーそれぞれの上限。
+///
+/// SeichiAssist は `Runtime.exec` で起動して stdout しか読まないため、stderr に大量に書くと
+/// パイプバッファが埋まってこのプロセスが書き込みでブロックし、双方が止まる。
+const MAX_PRINTED_MESSAGES: usize = 100;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct ChunkCoordinate {
     x: i32,
     z: i32,
@@ -31,74 +37,155 @@ impl From<&ChunkCoordinate> for Chunk {
     }
 }
 
-fn get_coordinate_if_contains_entities(
-    chunk_nbt: &CompoundTag,
-) -> Result<Option<ChunkCoordinate>, nbt::CompoundTagError<'_>> {
-    let level = chunk_nbt.get_compound_tag("Level")?;
-
-    let x = level.get_i32("xPos")?;
-    let z = level.get_i32("zPos")?;
-
-    let chunk_contains_entity = !level.get_compound_tag_vec("Entities")?.is_empty();
-    let chunk_contains_tile_entity = !level.get_compound_tag_vec("TileEntities")?.is_empty();
-
-    let result = if chunk_contains_entity || chunk_contains_tile_entity {
-        Some(ChunkCoordinate { x, z })
-    } else {
-        None
-    };
-
-    Ok(result)
+#[derive(Debug, Clone, Copy)]
+enum FileKind {
+    /// `region/r.*.mca`: 地形・ブロックエンティティ (1.16 以前はエンティティも)
+    Region,
+    /// `entities/r.*.mca`: 1.17 以降のエンティティ
+    Entities,
 }
 
-fn list_chunks_with_entities_in_region(region: &mut Region<File>) -> Vec<ChunkCoordinate> {
-    let mut result = Vec::new();
+struct Job {
+    path: PathBuf,
+    region: (i32, i32),
+    kind: FileKind,
+}
 
-    for chunk in region.read_all_chunks().unwrap() {
-        if let Some(c) = get_coordinate_if_contains_entities(&chunk).unwrap() {
-            result.push(c)
+struct JobOutput {
+    chunks: Vec<ChunkCoordinate>,
+    warnings: Vec<ChunkWarning>,
+}
+
+fn process_file(job: &Job) -> Result<JobOutput, FatalError> {
+    let mut chunks = Vec::new();
+    let mut nbt_warnings = Vec::new();
+
+    let mut warnings = region::for_each_chunk(&job.path, job.region, |local, nbt| {
+        let found = match job.kind {
+            FileKind::Region => chunk::region_chunk_with_entities(&nbt),
+            FileKind::Entities => chunk::entity_chunk_with_entities(&nbt),
+        };
+        match found {
+            Ok(Some((x, z))) => chunks.push(ChunkCoordinate { x, z }),
+            Ok(None) => {}
+            Err(reason) => nbt_warnings.push(ChunkWarning {
+                path: job.path.clone(),
+                local,
+                reason,
+            }),
+        }
+    })?;
+    warnings.append(&mut nbt_warnings);
+
+    Ok(JobOutput { chunks, warnings })
+}
+
+/// ワールドフォルダからディメンションのデータが置かれたフォルダを探す。
+///
+/// 通常は `<world>/region`。`region` が無い場合は Bukkit のネザー / エンドのワールドフォルダ
+/// (`world_nether/DIM-1/region`, `world_the_end/DIM1/region`) を探す。
+fn find_dimension_folder(world: &Path) -> Option<PathBuf> {
+    [world.to_path_buf(), world.join("DIM-1"), world.join("DIM1")]
+        .into_iter()
+        .find(|dir| dir.join("region").is_dir())
+}
+
+fn collect_jobs(dimension_folder: &Path) -> Result<Vec<Job>, FatalError> {
+    let mut jobs = Vec::new();
+    let mut add = |dir: PathBuf, kind: FileKind| -> Result<(), FatalError> {
+        for (path, region) in region::list_region_files(&dir)? {
+            jobs.push(Job { path, region, kind });
+        }
+        Ok(())
+    };
+
+    add(dimension_folder.join("region"), FileKind::Region)?;
+    // 1.16 以前のワールドには entities/ が無い
+    let entities = dimension_folder.join("entities");
+    if entities.is_dir() {
+        add(entities, FileKind::Entities)?;
+    }
+    Ok(jobs)
+}
+
+/// 上限付きで stderr にメッセージを出す。
+struct LimitedPrinter {
+    label: &'static str,
+    count: usize,
+}
+
+impl LimitedPrinter {
+    fn new(label: &'static str) -> Self {
+        LimitedPrinter { label, count: 0 }
+    }
+
+    fn print(&mut self, message: impl Display) {
+        self.count += 1;
+        if self.count <= MAX_PRINTED_MESSAGES {
+            eprintln!("{}: {}", self.label, message);
         }
     }
 
-    result
+    fn finish(&self) {
+        if self.count > MAX_PRINTED_MESSAGES {
+            eprintln!(
+                "{}: {} more messages were suppressed",
+                self.label,
+                self.count - MAX_PRINTED_MESSAGES
+            );
+        }
+    }
 }
 
-fn list_chunks_in_region_folder(
-    region_folder_path: &Path,
-    worker_count: u16,
-) -> Vec<ChunkCoordinate> {
-    let (snd_region, rcv_region) = bounded(1);
-    let (snd_search_result, rcv_search_result) = bounded(1);
+struct SearchOutcome {
+    chunks: BTreeSet<ChunkCoordinate>,
+    fatal_error_count: usize,
+}
+
+fn search(jobs: Vec<Job>, worker_count: u16) -> SearchOutcome {
+    let (snd_job, rcv_job) = bounded::<Job>(1);
+    let (snd_result, rcv_result) = bounded(1);
 
     crossbeam::scope(|s| {
-        let region_provider = FolderRegionProvider::new(region_folder_path.to_str().unwrap());
         s.spawn(move |_| {
-            region_provider
-                .iter_positions()
-                .unwrap()
-                .map(|position| region_provider.get_region(position).unwrap())
-                .for_each(|region| {
-                    let _ = snd_region.send(region);
-                });
-
-            drop(snd_region);
+            for job in jobs {
+                if snd_job.send(job).is_err() {
+                    break;
+                }
+            }
         });
 
         for _ in 0..worker_count {
-            let (sndsr, rcvrg) = (snd_search_result.clone(), rcv_region.clone());
+            let (snd_result, rcv_job) = (snd_result.clone(), rcv_job.clone());
             s.spawn(move |_| {
-                rcvrg.iter().for_each(|mut region| {
-                    let result = list_chunks_with_entities_in_region(&mut region);
-                    let _ = sndsr.send(result);
-                })
+                for job in rcv_job.iter() {
+                    let _ = snd_result.send(process_file(&job));
+                }
             });
         }
+        drop(snd_result);
 
-        drop(snd_search_result);
+        let mut chunks = BTreeSet::new();
+        let mut warnings = LimitedPrinter::new("warning");
+        let mut errors = LimitedPrinter::new("error");
+        for result in rcv_result.iter() {
+            match result {
+                Ok(output) => {
+                    output.warnings.iter().for_each(|w| warnings.print(w));
+                    chunks.extend(output.chunks);
+                }
+                Err(e) => errors.print(e),
+            }
+        }
+        warnings.finish();
+        errors.finish();
 
-        rcv_search_result.iter().flatten().collect::<Vec<_>>()
+        SearchOutcome {
+            chunks,
+            fatal_error_count: errors.count,
+        }
     })
-    .unwrap()
+    .expect("worker thread panicked")
 }
 
 #[derive(Parser)]
@@ -114,26 +201,53 @@ struct App {
     world_folder: String,
 }
 
-fn main() {
-    let app = App::parse();
-
-    let threads = app.threads.unwrap_or(1).max(1);
-
-    let world_folder_path: &Path = Path::new(&app.world_folder);
-    let region_folder_path = world_folder_path.join("region");
-
-    let result = list_chunks_in_region_folder(&region_folder_path, threads);
-
-    if app.protobuf {
-        let mut search_result: SearchResult = protos::chunk_search::SearchResult::new();
-        {
-            let converted_result = result.iter().map(Chunk::from).collect::<Vec<_>>();
-            search_result.result = converted_result
-        }
-        search_result.write_to_writer(&mut stdout()).unwrap();
+fn write_output(chunks: &BTreeSet<ChunkCoordinate>, protobuf: bool) -> std::io::Result<()> {
+    let mut out = stdout().lock();
+    if protobuf {
+        let mut search_result = SearchResult::new();
+        search_result.result = chunks.iter().map(Chunk::from).collect();
+        search_result
+            .write_to_writer(&mut out)
+            .map_err(std::io::Error::other)?;
     } else {
-        for ChunkCoordinate { x, z } in result {
-            println!("({}, {})", x, z);
+        for ChunkCoordinate { x, z } in chunks {
+            writeln!(out, "({}, {})", x, z)?;
         }
     }
+    out.flush()
+}
+
+fn main() -> ExitCode {
+    let app = App::parse();
+    let threads = app.threads.unwrap_or(1).max(1);
+    let world_folder = Path::new(&app.world_folder);
+
+    let Some(dimension_folder) = find_dimension_folder(world_folder) else {
+        eprintln!(
+            "error: region directory not found under {}",
+            world_folder.display()
+        );
+        return ExitCode::FAILURE;
+    };
+
+    let jobs = match collect_jobs(&dimension_folder) {
+        Ok(jobs) => jobs,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let outcome = search(jobs, threads);
+    if outcome.fatal_error_count > 0 {
+        // 一部の region を読めていない結果を出すと、呼び出し元はそれを完全な結果として扱ってしまう。
+        // stdout には何も出さずに失敗する。
+        return ExitCode::FAILURE;
+    }
+
+    if let Err(e) = write_output(&outcome.chunks, app.protobuf) {
+        eprintln!("error: failed to write output: {e}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
 }
