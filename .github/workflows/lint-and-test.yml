@@ -26,17 +26,23 @@ jobs:
         run:
           cargo test --all-features
       # 本番 (seichi_infra の Minecraft サーバーイメージ) は glibc 2.31 の Ubuntu 20.04 で動いている。
-      # リリースと同じく glibc を静的リンクしたバイナリが、古い glibc の環境でも起動することを確かめる
-      - name: Build statically linked release binary
+      # リリースと同じく glibc を静的リンクしたバイナリが、古い glibc の環境でも起動することを確かめる。
+      # リンクの確認が目的なので、ビルド時間を抑えるため debug ビルドにする
+      - name: Build statically linked binary
         run:
-          cargo build --release --target x86_64-unknown-linux-gnu
+          cargo build --target x86_64-unknown-linux-gnu
         env:
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+crt-static
       - name: Run the static binary on Ubuntu 20.04 (glibc 2.31)
         run: |
-          file target/x86_64-unknown-linux-gnu/release/chunk-search-rs | grep -E 'static(-pie|ally) linked'
+          file target/x86_64-unknown-linux-gnu/debug/chunk-search-rs | grep -E 'static(-pie|ally) linked'
           docker run --rm -v "$PWD:/w" -w /w ubuntu:20.04 sh -c '
+            set -eu
+            bin=./target/x86_64-unknown-linux-gnu/debug/chunk-search-rs
             ldd --version | head -n 1
-            ./target/x86_64-unknown-linux-gnu/release/chunk-search-rs --version
-            ./target/x86_64-unknown-linux-gnu/release/chunk-search-rs tests/fixtures/worlds/w1182
+            $bin --version
+            # 期待値は tests/cli.rs の format_1_18 と同じ
+            test "$($bin tests/fixtures/worlds/w1182)" = "(0, 0)"
+            # SeichiAssist と同じく protobuf 出力・複数スレッドでも動くこと
+            test -n "$($bin --protobuf --threads 4 tests/fixtures/worlds/w1182_negative)"
           '

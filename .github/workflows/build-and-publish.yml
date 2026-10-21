@@ -53,7 +53,7 @@ jobs:
           file '${{ github.workspace }}/target/${{ matrix.target }}/release/chunk-search-rs'
       - name: Check that Linux binaries are statically linked
         if: contains(matrix.target, 'linux')
-        run: |
+        run:
           file '${{ github.workspace }}/target/${{ matrix.target }}/release/chunk-search-rs' | grep -E 'static(-pie|ally) linked'
       - name: Upload artifact
         uses: actions/upload-artifact@v7
