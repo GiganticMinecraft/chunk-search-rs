@@ -41,10 +41,20 @@ jobs:
           cargo build --target ${{ matrix.target }} --release
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          # Linux 向けは glibc を静的リンクする。
+          # 実行先 (seichi_infra の Minecraft サーバーイメージ) の glibc はビルド環境より古いことがあり、
+          # 動的リンクだと GLIBC_2.32 not found などで起動できない。
+          # --target を付けたビルドにだけ効くので、build script や proc-macro には影響しない。
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+crt-static
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+crt-static
       - name: Debug output
         run: |
           du '${{ github.workspace }}/target/${{ matrix.target }}/release/chunk-search-rs'
           file '${{ github.workspace }}/target/${{ matrix.target }}/release/chunk-search-rs'
+      - name: Check that Linux binaries are statically linked
+        if: contains(matrix.target, 'linux')
+        run:
+          file '${{ github.workspace }}/target/${{ matrix.target }}/release/chunk-search-rs' | grep -E 'static(-pie|ally) linked'
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
