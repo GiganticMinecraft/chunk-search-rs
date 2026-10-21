@@ -30,7 +30,9 @@ pub type Compound = HashMap<Box<str>, Tag>;
 ///
 /// コンパウンドのエントリ数に比例してメモリを使うので、大きな中身は Box に入れて
 /// `Tag` 自体を小さく (24 byte) 保っている。
-#[derive(Debug, Clone, PartialEq)]
+///
+/// derive した Debug / PartialEq は入れ子の深さだけ再帰するので、テストでだけ使う。
+#[cfg_attr(test, derive(Debug, PartialEq))]
 pub enum Tag {
     Byte,
     Short,
