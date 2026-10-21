@@ -139,7 +139,19 @@ fn broken_chunks_are_skipped_with_warning() {
 #[test]
 fn unknown_compression_fails() {
     let stderr = assert_fails(&fixture("w1182_unknown_compression"));
-    assert!(stderr.contains("compression scheme 4"), "{stderr}");
+    assert!(stderr.contains("compression scheme 4\n"), "{stderr}");
+
+    // 外部ファイル化された LZ4 チャンク (132 = 4 | 128)
+    let world = scratch_world("w_external_lz4");
+    fs::create_dir(world.join("region")).unwrap();
+    let mut data = fs::read(fixture("w1182/region/r.0.0.mca")).unwrap();
+    data[8192 + 4] = 4 | 128;
+    fs::write(world.join("region/r.0.0.mca"), data).unwrap();
+    let stderr = assert_fails(&world);
+    assert!(
+        stderr.contains("compression scheme 4 (external)"),
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -150,7 +162,7 @@ fn missing_region_folder_fails() {
 }
 
 #[test]
-fn truncated_region_header_fails() {
+fn truncated_region_header_is_warning() {
     let world = scratch_world("w_truncated");
     fs::create_dir(world.join("region")).unwrap();
     fs::copy(
@@ -158,9 +170,13 @@ fn truncated_region_header_fails() {
         world.join("region/r.0.0.mca"),
     )
     .unwrap();
+    // ヘッダが 100 byte で切れた region (読めた location は 0 なので中身は無い)
     fs::write(world.join("region/r.1.0.mca"), [0u8; 100]).unwrap();
-    let stderr = assert_fails(&world);
-    assert!(stderr.contains("truncated"), "{stderr}");
+    let stderr = assert_chunks(&world, &[(0, 0)]);
+    assert!(
+        stderr.contains("r.1.0.mca: region header is truncated"),
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -268,4 +284,47 @@ fn symlinked_region_files_are_read() {
     )
     .unwrap();
     assert_eq!(assert_chunks(&world, &[(0, 0)]), "");
+}
+
+#[test]
+fn vanilla_layout_searches_overworld_only() {
+    let world = scratch_world("w_vanilla_layout");
+    fs::create_dir(world.join("region")).unwrap();
+    fs::create_dir_all(world.join("DIM-1/region")).unwrap();
+    fs::copy(
+        fixture("w1182/region/r.0.0.mca"),
+        world.join("region/r.0.0.mca"),
+    )
+    .unwrap();
+    fs::copy(
+        fixture("w1182_negative/region/r.-1.-1.mca"),
+        world.join("DIM-1/region/r.-1.-1.mca"),
+    )
+    .unwrap();
+    assert_eq!(assert_chunks(&world, &[(0, 0)]), "");
+}
+
+#[test]
+fn ambiguous_dimension_fails() {
+    let world = scratch_world("w_ambiguous_dimension");
+    for dim in ["DIM-1", "DIM1"] {
+        fs::create_dir_all(world.join(dim).join("region")).unwrap();
+        fs::copy(
+            fixture("w1182/region/r.0.0.mca"),
+            world.join(dim).join("region/r.0.0.mca"),
+        )
+        .unwrap();
+    }
+    let stderr = assert_fails(&world);
+    assert!(stderr.contains("cannot decide"), "{stderr}");
+}
+
+#[cfg(unix)]
+#[test]
+fn dangling_symlink_fails_with_file_path() {
+    let world = scratch_world("w_dangling_symlink");
+    fs::create_dir(world.join("region")).unwrap();
+    std::os::unix::fs::symlink(world.join("missing.mca"), world.join("region/r.0.0.mca")).unwrap();
+    let stderr = assert_fails(&world);
+    assert!(stderr.contains("region/r.0.0.mca: I/O error"), "{stderr}");
 }

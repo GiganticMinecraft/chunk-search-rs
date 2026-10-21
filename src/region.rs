@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 const SECTOR_SIZE: usize = 4096;
 const HEADER_SIZE: usize = SECTOR_SIZE * 2;
-const CHUNKS_PER_REGION_SIDE: i32 = 32;
+const CHUNKS_PER_REGION_SIDE: i64 = 32;
 const EXTERNAL_FLAG: u8 = 128;
 
 /// region ファイル単位で処理を続けられないエラー。
@@ -28,14 +28,11 @@ pub enum FatalError {
         path: PathBuf,
         source: io::Error,
     },
-    TruncatedHeader {
-        path: PathBuf,
-        len: usize,
-    },
     UnsupportedCompression {
         path: PathBuf,
         local: (i32, i32),
-        scheme: u8,
+        /// 圧縮種別の byte (外部ファイル化の bit 128 を含む)
+        compression: u8,
     },
 }
 
@@ -45,47 +42,49 @@ impl fmt::Display for FatalError {
             FatalError::Io { path, source } => {
                 write!(f, "{}: I/O error: {}", path.display(), source)
             }
-            FatalError::TruncatedHeader { path, len } => write!(
-                f,
-                "{}: region header is truncated ({} bytes, expected at least {})",
-                path.display(),
-                len,
-                HEADER_SIZE
-            ),
             FatalError::UnsupportedCompression {
                 path,
                 local: (lx, lz),
-                scheme,
+                compression,
             } => write!(
                 f,
-                "{}: chunk at local ({}, {}) uses unsupported compression scheme {}",
+                "{}: chunk at local ({}, {}) uses unsupported compression scheme {}{}",
                 path.display(),
                 lx,
                 lz,
-                scheme
+                compression & !EXTERNAL_FLAG,
+                if compression & EXTERNAL_FLAG != 0 {
+                    " (external)"
+                } else {
+                    ""
+                }
             ),
         }
     }
 }
 
-/// 1 チャンクだけを読み飛ばせば済む問題 (壊れたチャンクなど)。
+/// 読み飛ばせば済む問題 (壊れたチャンク、途中で切れた region ヘッダなど)。
 #[derive(Debug)]
 pub struct ChunkWarning {
     pub path: PathBuf,
-    pub local: (i32, i32),
+    /// region 内のチャンク位置。region ファイル全体に関する警告なら `None`。
+    pub local: Option<(i32, i32)>,
     pub reason: String,
 }
 
 impl fmt::Display for ChunkWarning {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}: skipped chunk at local ({}, {}): {}",
-            self.path.display(),
-            self.local.0,
-            self.local.1,
-            self.reason
-        )
+        match self.local {
+            Some((lx, lz)) => write!(
+                f,
+                "{}: skipped chunk at local ({}, {}): {}",
+                self.path.display(),
+                lx,
+                lz,
+                self.reason
+            ),
+            None => write!(f, "{}: {}", self.path.display(), self.reason),
+        }
     }
 }
 
@@ -116,7 +115,11 @@ pub fn list_region_files(dir: &Path) -> Result<Vec<RegionFile>, FatalError> {
         };
         // シンボリックリンクの先も見る
         let path = entry.path();
-        if fs::metadata(&path).map_err(io_err)?.is_file() {
+        let metadata = fs::metadata(&path).map_err(|source| FatalError::Io {
+            path: path.clone(),
+            source,
+        })?;
+        if metadata.is_file() {
             files.push((path, coords));
         }
     }
@@ -157,10 +160,17 @@ pub fn for_each_chunk(
     if data.is_empty() {
         return Ok(warnings);
     }
+    // Minecraft と同様、ヘッダが途中で切れていても読めた分の location だけを使う
+    // (クラッシュで書き込み途中のファイルが残った場合など)。
     if data.len() < HEADER_SIZE {
-        return Err(FatalError::TruncatedHeader {
+        warnings.push(ChunkWarning {
             path: path.to_path_buf(),
-            len: data.len(),
+            local: None,
+            reason: format!(
+                "region header is truncated ({} bytes, expected {})",
+                data.len(),
+                HEADER_SIZE
+            ),
         });
     }
 
@@ -169,12 +179,15 @@ pub fn for_each_chunk(
         let mut warn = |reason: String| {
             warnings.push(ChunkWarning {
                 path: path.to_path_buf(),
-                local,
+                local: Some(local),
                 reason,
             })
         };
 
-        let loc = u32::from_be_bytes(data[index * 4..index * 4 + 4].try_into().unwrap());
+        let Some(loc) = data.get(index * 4..index * 4 + 4) else {
+            break;
+        };
+        let loc = u32::from_be_bytes(loc.try_into().unwrap());
         if loc == 0 {
             continue; // 未生成
         }
@@ -213,7 +226,7 @@ pub fn for_each_chunk(
                 return Err(FatalError::UnsupportedCompression {
                     path: path.to_path_buf(),
                     local,
-                    scheme: compression,
+                    compression,
                 });
             }
             // それ以外はヘッダが壊れたチャンク
@@ -224,8 +237,9 @@ pub fn for_each_chunk(
         }
 
         let nbt = if compression & EXTERNAL_FLAG != 0 {
-            let cx = region.0 * CHUNKS_PER_REGION_SIDE + local.0;
-            let cz = region.1 * CHUNKS_PER_REGION_SIDE + local.1;
+            // ファイル名由来のリージョン座標は任意の i32 なので i64 で計算する
+            let cx = i64::from(region.0) * CHUNKS_PER_REGION_SIDE + i64::from(local.0);
+            let cz = i64::from(region.1) * CHUNKS_PER_REGION_SIDE + i64::from(local.1);
             let external = path.with_file_name(format!("c.{cx}.{cz}.mcc"));
             match fs::read(&external) {
                 Ok(bytes) => decode(scheme, &bytes),

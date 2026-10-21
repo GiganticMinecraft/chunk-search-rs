@@ -3,7 +3,7 @@ mod protos;
 mod region;
 
 use crate::protos::chunk_search::{Chunk, ChunkCoord, SearchResult};
-use crate::region::{ChunkWarning, FatalError};
+use crate::region::{ChunkWarning, FatalError, RegionFile};
 use clap::Parser;
 use crossbeam_channel::bounded;
 use protobuf::{Message, MessageField};
@@ -71,7 +71,7 @@ fn process_file(job: &Job) -> Result<JobOutput, FatalError> {
             Ok(None) => {}
             Err(reason) => nbt_warnings.push(ChunkWarning {
                 path: job.path.clone(),
-                local,
+                local: Some(local),
                 reason,
             }),
         }
@@ -81,41 +81,72 @@ fn process_file(job: &Job) -> Result<JobOutput, FatalError> {
     Ok(JobOutput { chunks, warnings })
 }
 
-/// ワールドフォルダからディメンションのデータが置かれたフォルダを探す。
+/// ワールドフォルダから、ディメンションのデータが置かれたフォルダと region ファイルの一覧を探す。
 ///
-/// 通常は `<world>/region`。Bukkit のネザー / エンドのワールドフォルダ
-/// (`world_nether/DIM-1/region`, `world_the_end/DIM1/region`) にも対応する。
-/// region ファイルを含む候補を優先し (空の `<world>/region` が `DIM-1` を隠さないように)、
-/// どれにも無ければ `region` ディレクトリがある最初の候補を使う。
-fn find_dimension_folder(world: &Path) -> Option<PathBuf> {
-    let candidates: Vec<PathBuf> = [world.to_path_buf(), world.join("DIM-1"), world.join("DIM1")]
-        .into_iter()
-        .filter(|dir| dir.join("region").is_dir())
-        .collect();
-    let has_region_files = |dir: &PathBuf| {
-        region::list_region_files(&dir.join("region")).is_ok_and(|files| !files.is_empty())
+/// 1. `<world>/region` に region ファイルがあればそれ (通常のワールド。vanilla の
+///    `<world>/DIM-1` などは別ディメンションなので見ない)
+/// 2. 無ければ region ファイルを含む `<world>/DIM-1` か `<world>/DIM1`
+///    (Bukkit のネザー / エンドのワールドフォルダ)。両方にあればどちらか決められないのでエラー
+/// 3. どこにも region ファイルが無ければ、存在する最初の `region` ディレクトリ (結果は空)
+fn find_dimension_folder(world: &Path) -> Result<(PathBuf, Vec<RegionFile>), String> {
+    let mut found = Vec::new();
+    for dir in [world.to_path_buf(), world.join("DIM-1"), world.join("DIM1")] {
+        let region_dir = dir.join("region");
+        if region_dir.is_dir() {
+            let files = region::list_region_files(&region_dir).map_err(|e| e.to_string())?;
+            found.push((dir, files));
+        }
+    }
+
+    let Some(first) = found.first() else {
+        return Err(format!(
+            "region directory not found under {}",
+            world.display()
+        ));
     };
-    candidates
+    if first.0 == world && !first.1.is_empty() {
+        return Ok(found.swap_remove(0));
+    }
+    let mut with_files: Vec<_> = found
         .iter()
-        .find(|dir| has_region_files(dir))
-        .or(candidates.first())
-        .cloned()
+        .enumerate()
+        .filter(|(_, (_, files))| !files.is_empty())
+        .map(|(i, _)| i)
+        .collect();
+    match with_files.len() {
+        0 => Ok(found.swap_remove(0)),
+        1 => Ok(found.swap_remove(with_files.remove(0))),
+        _ => Err(format!(
+            "both {}/DIM-1/region and {}/DIM1/region contain region files; cannot decide which dimension to search",
+            world.display(),
+            world.display()
+        )),
+    }
 }
 
-fn collect_jobs(dimension_folder: &Path) -> Result<Vec<Job>, FatalError> {
-    let mut jobs = Vec::new();
-    let mut add = |dir: PathBuf, kind: FileKind| -> Result<(), FatalError> {
-        for (path, region) in region::list_region_files(&dir)? {
-            jobs.push(Job { path, region, kind });
-        }
-        Ok(())
-    };
+fn collect_jobs(
+    dimension_folder: &Path,
+    region_files: Vec<RegionFile>,
+) -> Result<Vec<Job>, FatalError> {
+    let mut jobs: Vec<Job> = region_files
+        .into_iter()
+        .map(|(path, region)| Job {
+            path,
+            region,
+            kind: FileKind::Region,
+        })
+        .collect();
 
-    add(dimension_folder.join("region"), FileKind::Region)?;
     // 1.16 以前のワールドには entities/ が無い
     let entities = dimension_folder.join("entities");
     if entities.is_dir() {
-        add(entities, FileKind::Entities)?;
+        for (path, region) in region::list_region_files(&entities)? {
+            jobs.push(Job {
+                path,
+                region,
+                kind: FileKind::Entities,
+            });
+        }
     }
     Ok(jobs)
 }
@@ -243,15 +274,15 @@ fn main() -> ExitCode {
     let threads = app.threads.unwrap_or(1).max(1);
     let world_folder = Path::new(&app.world_folder);
 
-    let Some(dimension_folder) = find_dimension_folder(world_folder) else {
-        eprintln!(
-            "error: region directory not found under {}",
-            world_folder.display()
-        );
-        return ExitCode::FAILURE;
+    let (dimension_folder, region_files) = match find_dimension_folder(world_folder) {
+        Ok(found) => found,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
     };
 
-    let jobs = match collect_jobs(&dimension_folder) {
+    let jobs = match collect_jobs(&dimension_folder, region_files) {
         Ok(jobs) => jobs,
         Err(e) => {
             eprintln!("error: {e}");
