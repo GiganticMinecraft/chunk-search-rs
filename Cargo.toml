@@ -10,7 +10,7 @@ protobuf-codegen = "3.7.2"
 
 [dependencies]
 protobuf = "3.7.2"
-named-binary-tag = "0.6"
+flate2 = "1"
 
 clap = {version = "4.5.4", features = ["derive"]}
 

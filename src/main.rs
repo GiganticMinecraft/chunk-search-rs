@@ -1,4 +1,5 @@
 mod chunk;
+mod nbt;
 mod protos;
 mod region;
 
